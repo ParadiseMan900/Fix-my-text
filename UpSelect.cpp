@@ -37,6 +37,8 @@ char* GetBufer()
 }
 void SetBufer(char* data)
 {
+	if (data == NULL)
+		return;
 	size_t size = strlen(data) + 1;
 	HGLOBAL dataMem = GlobalAlloc(GMEM_MOVEABLE, size);
 	memcpy(GlobalLock(dataMem), data, size);
@@ -50,8 +52,6 @@ void SetBufer(char* data)
 void Logic()
 {
 	char* highlighting = GetBufer();
-	if (highlighting == NULL)
-		return;
 	for (int i = 0; i < strlen(highlighting); i++)
 		highlighting[i] = toupper(highlighting[i]);
 	SetBufer(highlighting);
@@ -71,14 +71,14 @@ void CCP()
 }
 int main()
 {
-	ShowWindow(FindWindowA("ConsoleWindowClass", NULL), false);
+	ShowWindow(FindWindowA("ConsoleWindowClass", NULL), true);
+	int key = Сombination(VK_ESCAPE, false, false, false, true);
 	while (true)
 	{
-		int key = Сombination(VK_ESCAPE, false, false, false, true);
 		if (keyPress(key))
 		{
 			char* conservation = GetBufer();
-			//printf("Сonservation =  %s\n", Сonservation);
+			printf("Conservation =  %s\n", conservation);
 			CCP();
 			SetBufer(conservation);
 			while(keyPress(key)){}
