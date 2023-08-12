@@ -55,6 +55,35 @@ void SetBufer(char* data)
 	printf("SetBufer =  %s\n", data);
 }
 /////////////////////////////////////////////////////////////////////////////////////
+char* LClear(char* str)
+{
+	size_t newSize = 0;
+	char* newSelected = (char*)malloc(sizeof(char));
+	char marks[] = {'.',',','?','!',';',':'};
+	for (int i = 0; i < strlen(str); i++)
+	{
+		if (i != 0)
+		{
+			if (str[i-1] == ' ' && str[i] == ' ')
+				continue;
+			if (str[i] != ' ')
+				for (int j = 0; j < sizeof(marks); j++)
+					if (str[i - 1] == marks[j])
+					{
+						newSelected[newSize] = ' ';
+						newSize++;
+						newSelected = (char*)realloc(newSelected,
+							(newSize + 1) * sizeof(char));
+						break;
+					}		
+		}
+		newSelected[newSize] = str[i];
+		newSize++;
+		newSelected = (char*)realloc(newSelected, (newSize+1) * sizeof(char));
+	}
+	newSelected[newSize] = '\0';
+	return newSelected;
+}
 char LUp(char letter)
 {
 	if ((letter >= 97 && letter <= 122)
@@ -243,21 +272,23 @@ char LSwap(char ch)
 		return '^';
 	if (ch == '?')
 		return '&';
+	return ch;
 }
 void Logic(char* selected)
 {
 	if (selected != NULL)
 		switch (switcher)
 		{
+		case 1:		
+			selected = LClear(selected);
+			break;
 		case 2:
 			for (int i = 0; i < strlen(selected); i++)
-				selected[i] = LUp(selected[i]);
+				if (selected[i] == LUp(selected[i]))
+					selected[i] = LDown(selected[i]);
+				else selected[i] = LUp(selected[i]);
 			break;
 		case 3:
-			for (int i = 0; i < strlen(selected); i++)
-				selected[i] = LDown(selected[i]);
-			break;
-		case 4:
 			for (int i = 0; i < strlen(selected); i++)
 			{
 				if (selected[i] != LDown(selected[i]))
@@ -277,18 +308,15 @@ void Logic(char* selected)
 /////////////////////////////////////////////////////////////////////////////////////
 struct keysComb
 {
-	int* muss;
-	int len;
+	int name;
 	int ID;
 };
 bool keysPress(keysComb comb)
 {
-	for (int i = 0; i < comb.len; i++)
-	{
-		if (!GetAsyncKeyState(comb.muss[i]))
+	if (!GetAsyncKeyState(comb.name))
 			return false;
-	}
-	switcher = comb.ID;
+	if (comb.ID != 0)
+		switcher = comb.ID;
 	return true;
 }
 void EmulateACombinationWithCrl(char key)
@@ -317,30 +345,24 @@ int main()
 	//Список ключей клавиатуры:
 	//https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 	
-	int keyExit[] = { VK_ESCAPE };
-	int keyExitLen = sizeof(keyExit) / sizeof(keyExit[0]);
-	keysComb toEXIT = { keyExit , keyExitLen , 1 };
+	//ВСЕ ФУКЦИИ 
+	keysComb toEXIT = { VK_ESCAPE, 0 };
+	keysComb toLWIN = { VK_LWIN, 0 };
 
-	int keysUp[] = { VK_LWIN, VK_F12 };
-	int keyUpLen = sizeof(keysUp) / sizeof(keysUp[0]);
-	keysComb toUP = { keysUp , keyUpLen , 2 };
+	//
+	keysComb toCLEAR = { VK_F11,  1 };
+	keysComb toUPDOWN = { VK_F12, 2 };
+	keysComb toSWAP = { VK_F4, 3 };
 
-	int keysDown[] = { VK_LWIN, VK_F11 };
-	int keyDownLen = sizeof(keysDown) / sizeof(keysDown[0]);
-	keysComb toDOWN = { keysDown , keyDownLen , 3 };
-	
-	int keysLang[] = { VK_LWIN, VK_F4 };
-	int keyLangLen = sizeof(keysLang) / sizeof(keysLang[0]);
-	keysComb toSWAP = { keysLang , keyLangLen , 4 };
-
-	int exitTime = 2000;    //2 Секунды для выхода
+	int exitTime = 1500;    //1.5 Секунды для выхода
 	int time = 0;
 	char* conservation = NULL;
 	char* bufer = NULL;
 	char* selected = NULL;
 	while (true)
 	{
-		if (keysPress(toUP)|| keysPress(toDOWN)|| keysPress(toSWAP))
+		if (keysPress(toLWIN) &&
+			(keysPress(toCLEAR) || keysPress(toUPDOWN) || keysPress(toSWAP)))
 		{
 			//GET CONSERVATION;
 			bufer = (char*)GetBufer(true);
@@ -354,13 +376,15 @@ int main()
 
 			//LOGIC (CTRL+C / GET / DO STAF / SET / CTRL+V);
 			selected = NULL;
-			while (keysPress(toUP) || keysPress(toDOWN) || keysPress(toSWAP)) {}
-			for (int i = 0; i < 25; i++)
+			while (keysPress(toLWIN))
+				Sleep(10);
+			for (int i = 0; i < 100; i++)
 			{
 				EmulateACombinationWithCrl('C');
 				selected = (char*)GetBufer(false);
 				if (selected != NULL)
 					break;
+				Sleep(10);
 			} 
 			selected = (char*)GetBufer(true);
 			ClearBufer();
