@@ -11,19 +11,19 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Word++.cpp">
+    <ClCompile Include="FMT.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="Word++.rc" />
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="logo.ico" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Input Fixer.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="FMT.ico" />
   </ItemGroup>
 </Project>
