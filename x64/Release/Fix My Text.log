@@ -1,11 +1,6 @@
-﻿  Fix My Text.cpp
-C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\Fix My Text.cpp(242,11): warning C4477: "printf": в строке форматирования "%d" требуется аргумент типа "int", но вариативный аргумент "2" имеет тип "size_t"
-C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\Fix My Text.cpp(242,11): message : рекомендуется использовать "%zd" в строке форматирования
-C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\Fix My Text.cpp(253,11): warning C4477: "printf": в строке форматирования "%d" требуется аргумент типа "int", но вариативный аргумент "2" имеет тип "size_t"
-C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\Fix My Text.cpp(253,11): message : рекомендуется использовать "%zd" в строке форматирования
-  Создание кода
-  3 of 19 functions (15.8%) were compiled, the rest were copied from previous compilation.
+﻿  Создание кода
+  4 of 21 functions (19.0%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    2 functions had inline decision re-evaluated but remain unchanged
+    0 functions had inline decision re-evaluated but remain unchanged
   Создание кода завершено
   Fix My Text.vcxproj -> C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\x64\Release\Fix My Text.exe

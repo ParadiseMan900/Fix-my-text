@@ -3,6 +3,8 @@
 #include <iostream>
 #include "resource.h"
 
+#define GREATER_WIN10  22000
+
 #define _HELP 0
 #define _HIDESHOW 1
 #define _EXIT 2
@@ -13,6 +15,7 @@
 #define RED 12
 #define YELLOW 14
 #define WHITE 15
+
 
 HWND console;
 int switcher = 0;
@@ -30,12 +33,20 @@ struct LanguageLib
 /////////////////////////////////////////////////////////////////////////////////////
 const char* LoadAndWriteTXT(int nameID)
 {
+	const char* data = "";
 	HINSTANCE handle = GetModuleHandle(NULL);
+
 	//Ссылка на ресурс
-	HRSRC rcNameID = FindResource(handle, MAKEINTRESOURCE(nameID), MAKEINTRESOURCE(TEXTFILE));
-	//Данные в TXT (Все)
-	HGLOBAL rcData = LoadResource(handle, rcNameID);
-	return (const char*)LockResource(rcData);
+	HRSRC rcNameID = FindResource(handle, MAKEINTRESOURCE(nameID),
+		MAKEINTRESOURCE(TEXTFILE));
+	if (rcNameID)
+	{
+		//Данные в TXT (Все)
+		HGLOBAL rcData = LoadResource(handle, rcNameID);
+		if (rcData)
+			data = (const char*)LockResource(rcData);
+	}
+	return data;
 }
 LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARAM action)
 {
@@ -146,10 +157,16 @@ void SetBufer(char* data)
 		wchar_t* bufer = new wchar_t[dataSize];
 		MultiByteToWideChar(CP_ACP, 0, data, -1, bufer, dataSize);
 
-		size_t buferLen = (wcslen(bufer) + 1) * sizeof(wchar_t);
+		size_t buferLen = (dataSize) * sizeof(wchar_t);
 		globAll = GlobalAlloc(GMEM_DDESHARE, buferLen);
-		memcpy(GlobalLock(globAll), bufer, buferLen);
+		if (globAll)
+		{
+			LPVOID globLock = GlobalLock(globAll);
+			if(globLock)
+				memcpy(globLock, bufer, buferLen);
+		}
 		GlobalUnlock(globAll);
+
 		if (OpenClipboard(NULL))
 		{
 			EmptyClipboard();
@@ -353,17 +370,21 @@ void EmulateACombinationWithCtrl(char key)
 int main()
 {
 	////	Узнаём версию Windows, т.к. на 11 винде не работает GetConsoleWindow()
-	int osNUM = 0;
-	NTSTATUS(WINAPI * RtlGetVersion)(LPOSVERSIONINFOEXW) = nullptr;
+	int osNUM = GREATER_WIN10;
 	OSVERSIONINFOEXW osInfo{ 0 };
-	*(FARPROC*)&RtlGetVersion = GetProcAddress(GetModuleHandle(L"ntdll"), "RtlGetVersion");
-	if (RtlGetVersion != NULL)
+	NTSTATUS(WINAPI * RtlGetVersion)(LPOSVERSIONINFOEXW) = nullptr;
+	HINSTANCE gmh = GetModuleHandle(L"ntdll");
+	if (gmh)
 	{
-		osInfo.dwOSVersionInfoSize = sizeof(osInfo);
-		RtlGetVersion(&osInfo);
-		osNUM = (int)osInfo.dwBuildNumber;
+		*(FARPROC*)&RtlGetVersion = GetProcAddress(gmh, "RtlGetVersion");
+		if (RtlGetVersion)
+		{
+			osInfo.dwOSVersionInfoSize = sizeof(osInfo);
+			RtlGetVersion(&osInfo);
+			osNUM = (int)osInfo.dwBuildNumber;
+		}
 	}
-	if (osNUM >= 22000)
+	if (osNUM >= GREATER_WIN10)
 		console = GetForegroundWindow();
 	else console = GetConsoleWindow();
 	ShowWindow(console, SW_HIDE);
