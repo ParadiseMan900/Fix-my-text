@@ -1,0 +1,4 @@
+https://stackoverflow.com/questions/252226/signing-a-windows-exe-file
+
+cd "C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\x64\Release
+signtool sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "Fix My Text.exe"

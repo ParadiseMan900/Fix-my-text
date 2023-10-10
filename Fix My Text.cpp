@@ -12,6 +12,7 @@
 #define _SWAP 1
 #define _UPDOWN 2
 
+#define GREEN 10
 #define RED 12
 #define YELLOW 14
 #define WHITE 15
@@ -142,9 +143,9 @@ char* GetBufer(bool print)
 	if (print)
 	{
 		SetColor(RED);
-		printf("SetBufer: ");
+		printf("GetBufer:\t");
 		SetColor(WHITE);
-		printf("%s\n", data);
+		printf("\"%s\"\n", data);
 	}
 	return data;
 }
@@ -175,9 +176,15 @@ void SetBufer(char* data)
 		}
 	}
 	SetColor(YELLOW);
-	printf("SetBufer: ");
+	printf("SetBufer:\t");
 	SetColor(WHITE);
-	printf("%s\n", data);
+	printf("\"%s\"\n", data);
+}
+void LogMsg(const char* msg)
+{
+	SetColor(GREEN);
+	printf("Message:\t%s\n", msg);
+	SetColor(WHITE);
 }
 /////////////////////////////////////////////////////////////////////////////////////
 char LUp(char letter)
@@ -314,9 +321,11 @@ void LogicSwitch(char* selected)
 		{
 		case _SWAP:
 			LChanger(selected);
+			LogMsg("Смена языка выполнена");
 			break;
 		case _UPDOWN:
 			LSizer(selected);
+			LogMsg("Смена регистра выполнена");
 			break;
 		default:
 			return;
@@ -366,8 +375,7 @@ void EmulateACombinationWithCtrl(char key)
 	Sleep(10);
 }
 /////////////////////////////////////////////////////////////////////////////////////
-
-int main()
+NOTIFYICONDATA InterfaceConstructor()
 {
 	////	Узнаём версию Windows, т.к. на 11 винде не работает GetConsoleWindow()
 	int osNUM = GREATER_WIN10;
@@ -403,7 +411,6 @@ int main()
 	////	Создание отдельного окна для трея. Окно скрываем
 	HWND trayWin = CreateWindow(wc.lpszClassName, L"TrayWin", 0, 0, 0, 0, 0, 0, 0,
 		wc.hInstance, 0);
-
 	////	Добавление окна (в виде иконки) в трей
 	NOTIFYICONDATA icon = { 0 };
 	icon.cbSize = sizeof(icon);
@@ -414,8 +421,15 @@ int main()
 	//IDI_ICON1 - ID Иконки из файла ресурсов.
 	icon.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));
 	wcscpy_s(icon.szTip, L"\"Fix my text\"\nНажмите ПКМ для открытия меню");
+	return icon;
+}
+int main()
+{
+	////	Проверки, создание окон, включение русского и т.п.
+	//Это нужно, чтобы не хранились ненужные переменные
+	NOTIFYICONDATA icon = InterfaceConstructor();
 	Shell_NotifyIcon(NIM_ADD, &icon);
-
+	
 	////	Список ключей клавиатуры:
 	//https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
@@ -436,6 +450,7 @@ int main()
 		if (IsKeysPressed(toSWAP) || IsKeysPressed(toUPDOWN))
 		{
 			printf("-----------------------------------------------\n");
+					
 			////	GET CONSERVATION;
 			conservation = GetBufer(true);
 			ClearBufer();
@@ -451,6 +466,14 @@ int main()
 				Sleep(10);
 			}
 
+			//Проверка на то что это не консоль (в консоли ctrl+c = смерть)
+			if (GetForegroundWindow() == console)
+			{
+				LogMsg("Предотвращение ошибки. Безопостный выход");
+				SetBufer(conservation);
+				return 1;
+			}
+
 			//Эмуляция Ctrl+C
 			for (int i = 0; i < 10; i++)
 			{
@@ -460,10 +483,11 @@ int main()
 					break;
 				CallbackMessage();
 			}
-
+			
 			//Скипаем логику если ничего не выделенно
 			if (GetBufer(true) == NULL)
 			{
+				LogMsg("Ничего не выделенно");
 				SetBufer(conservation);
 				continue;
 			}
@@ -487,4 +511,5 @@ int main()
 	delete[] bufer;
 	delete[] conservation;
 	delete[] selected;
+	return 0;
 }
