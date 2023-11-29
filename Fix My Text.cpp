@@ -1,21 +1,22 @@
-﻿//Code for "Fix my text" by Teslev Dmitry Sergeevich
+﻿//Code for "Fix my text" by Teslev Dmitry Sergeevich 2023
 #include <windows.h>
 #include <iostream>
 #include "resource.h"
 
 #define GREATER_WIN10  22000
 
-#define _HELP 0
-#define _HIDESHOW 1
-#define _EXIT 2
+#define _HELP		0
+#define _HIDESHOW	1
+#define _EXIT		2
 
-#define _SWAP 1
-#define _UPDOWN 2
+#define _SWAP		1
+#define _UPDOWN		2
 
-#define GREEN 10
-#define RED 12
-#define YELLOW 14
-#define WHITE 15
+#define GREEN		10
+#define BLUE		11
+#define RED			12
+#define YELLOW		14
+#define WHITE		15
 
 
 HWND console;
@@ -25,25 +26,31 @@ bool isConsole = false;
 
 struct LanguageLib
 {
-	const char* engChars;
-	const char* otherChars;
-	const char* sameChars;
+	const wchar_t* engChars;
+	const wchar_t* otherChars;
+	const wchar_t* sameChars;
 	int sizeAll;
 	int sizeSame;
+};
+struct StrData
+{
+	wchar_t* str = NULL;
+	size_t size = 0;
+	unsigned int format = CF_UNICODETEXT;
 };
 /////////////////////////////////////////////////////////////////////////////////////
 const char* LoadAndWriteTXT(int nameID)
 {
 	const char* data = "";
-	HINSTANCE handle = GetModuleHandle(NULL);
+	HINSTANCE handle = GetModuleHandleW(NULL);
 
 	//Ссылка на ресурс
-	HRSRC rcNameID = FindResource(handle, MAKEINTRESOURCE(nameID),
-		MAKEINTRESOURCE(TEXTFILE));
+	HRSRC rcNameID = FindResourceW(handle, MAKEINTRESOURCEW(nameID),
+		MAKEINTRESOURCEW(TEXTFILE));
 	if (rcNameID)
 	{
 		//Данные в TXT (Все)
-		HGLOBAL rcData = LoadResource(handle, rcNameID);
+		HANDLE rcData = LoadResource(handle, rcNameID);
 		if (rcData)
 			data = (const char*)LockResource(rcData);
 	}
@@ -124,20 +131,32 @@ void ClearBufer()
 		CloseClipboard();
 	}
 }
-char* GetBufer(bool print)
+StrData GetBufer(bool print)
 {
-	char* data = NULL;
+	StrData data{};
 	if (OpenClipboard(NULL))
 	{
-		HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+		HANDLE hData;
+		if (IsClipboardFormatAvailable(CF_UNICODETEXT))
+		{
+			hData = GetClipboardData(CF_UNICODETEXT);
+			data.format = CF_UNICODETEXT;
+		}
+		else if (IsClipboardFormatAvailable(CF_DIB))
+		{
+			hData = GetClipboardData(CF_DIB);
+			data.format = CF_DIB;
+		}
+		else return data;
+
 		wchar_t* bufer = (wchar_t*)GlobalLock(hData);
 		GlobalUnlock(hData);
 		CloseClipboard();
+		data.size = GlobalSize(hData);
 		if (bufer != NULL)
 		{
-			int buferSize = WideCharToMultiByte(CP_ACP, 0, bufer, -1, 0, 0, 0, 0);
-			data = new char[buferSize];
-			WideCharToMultiByte(CP_ACP, 0, bufer, -1, data, buferSize, 0, 0);
+			data.str = new wchar_t[data.size / sizeof(wchar_t)];
+			memcpy(data.str, bufer, data.size);
 		}
 	}
 	if (print)
@@ -145,40 +164,49 @@ char* GetBufer(bool print)
 		SetColor(RED);
 		printf("GetBufer:\t");
 		SetColor(WHITE);
-		printf("\"%s\"\n", data);
+		if(data.format == CF_UNICODETEXT)
+			wprintf(L"\"%s\"\n", data.str);
+		else
+		{
+			SetColor(BLUE);
+			printf("\"* PICTURE / КАРТИНКА *\"\n");
+			SetColor(WHITE);
+		}
 	}
 	return data;
 }
-void SetBufer(char* data)
+void SetBufer(StrData data)
 {
-	HGLOBAL globAll = NULL;
-	if (data != NULL)
+	HANDLE globAll = NULL;
+	if (data.str != NULL)
 	{
-		int dataSize = MultiByteToWideChar(CP_ACP, 0, data, -1, 0, 0);
-		wchar_t* bufer = new wchar_t[dataSize];
-		MultiByteToWideChar(CP_ACP, 0, data, -1, bufer, dataSize);
-
-		size_t buferLen = (dataSize) * sizeof(wchar_t);
-		globAll = GlobalAlloc(GMEM_DDESHARE, buferLen);
+		globAll = GlobalAlloc(GMEM_DDESHARE, data.size);
 		if (globAll)
 		{
-			LPVOID globLock = GlobalLock(globAll);
+			void* globLock = GlobalLock(globAll);
 			if(globLock)
-				memcpy(globLock, bufer, buferLen);
+				memcpy(globLock, data.str, data.size);
+			GlobalUnlock(globAll);
 		}
-		GlobalUnlock(globAll);
 
 		if (OpenClipboard(NULL))
 		{
 			EmptyClipboard();
-			SetClipboardData(CF_UNICODETEXT, globAll);
+			SetClipboardData(data.format, globAll);
 			CloseClipboard();
 		}
 	}
 	SetColor(YELLOW);
 	printf("SetBufer:\t");
 	SetColor(WHITE);
-	printf("\"%s\"\n", data);
+	if (data.format == CF_UNICODETEXT)
+		wprintf(L"\"%s\"\n", data.str);
+	else
+	{
+		SetColor(BLUE);
+		printf("\"* PICTURE / КАРТИНКА *\"\n");
+		SetColor(WHITE);
+	}
 }
 void LogMsg(const char* msg)
 {
@@ -187,36 +215,36 @@ void LogMsg(const char* msg)
 	SetColor(WHITE);
 }
 /////////////////////////////////////////////////////////////////////////////////////
-char LUp(char letter)
+wchar_t LUp(wchar_t letter)
 {
-	if ((letter >= 'a' && letter <= 'z')
-		|| (letter >= 'а' && letter <= 'я'))
+	if ((letter >= L'a' && letter <= L'z')
+		|| (letter >= L'а' && letter <= L'я'))
 	{
-		letter = letter + ('A' - 'a');
+		letter += (L'A' - L'a');
 	}
-	if (letter == 'ё')
-		letter = 'Ё';
+	if (letter == L'ё')
+		letter = L'Ё';
 	return letter;
 }
-char LDown(char letter)
+wchar_t LDown(wchar_t letter)
 {
-	if ((letter >= 'A' && letter <= 'Z')
-		|| (letter >= 'А' && letter <= 'Я'))
+	if ((letter >= L'A' && letter <= L'Z')
+		|| (letter >= L'А' && letter <= L'Я'))
 	{
-		letter = letter + ('a' - 'A');
+		letter += (L'a' - L'A');
 	}
-	if (letter == 'Ё')
-		letter = 'ё';
+	if (letter == L'Ё')
+		letter = L'ё';
 	return letter;
 }
-bool LIsItEngWord(char* str, LanguageLib lib)
+bool LIsItEngWord(wchar_t* str, LanguageLib lib)
 {
 	int eng = 0;
 	int other = 0;
 
-	char letter;
+	wchar_t letter;
 	bool needToSkip = false;
-	for (int i = 0; i < strlen(str); i++)
+	for (int i = 0; i < lstrlen(str); i++)
 	{
 		needToSkip = false;
 		letter = LDown(str[i]);
@@ -245,7 +273,7 @@ bool LIsItEngWord(char* str, LanguageLib lib)
 		return false;
 	return true;
 }
-char LSwap(char ch, bool eng, LanguageLib lib)
+wchar_t LSwap(wchar_t ch, bool eng, LanguageLib lib)
 {
 	//Смена между языками
 	if (eng)
@@ -259,28 +287,28 @@ char LSwap(char ch, bool eng, LanguageLib lib)
 				return lib.engChars[i];
 	return ch;
 }
-void LChanger(char* str)
+void LChanger(wchar_t* str)
 {
-	LanguageLib RusLib{ "`~@#$^&qwertyuiop[{]}|asdfghjkl;:'\"zxcvbnm,<.>/?" ,
-"ёЁ\"№;:?йцукенгшщзхХъЪ/фывапролджЖэЭячсмитьбБюЮ.,",
- "1234567890!%*()-_=+\\", 49 , 21 };
+	LanguageLib RusLib{ L"`~@#$^&qwertyuiop[{]}|asdfghjkl;:'\"zxcvbnm,<.>/?" ,
+		L"ёЁ\"№;:?йцукенгшщзхХъЪ/фывапролджЖэЭячсмитьбБюЮ.,",
+			L"1234567890!%*()-_=+\\", 49 , 21 };
 
 	bool isBig = false;
 	bool isEng = false;
 
-	size_t origLen = strlen(str) + 1;
-	char* oneWord = NULL;
-	char* result = new char[origLen];
+	size_t origLen = lstrlen(str) + 1;
+	wchar_t* oneWord = NULL;
+	wchar_t* result = new wchar_t[origLen];
 
 	size_t counter = 0;
 	size_t wordLen = 0;
 	size_t lastID = 0;
 	for (int i = 0; i < origLen; i++)
-		if (str[i] == ' ' || str[i] == '\t' || str[i] == '\n' || str[i] == '\0')
+		if (str[i] == L' ' || str[i] == L'\t' || str[i] == L'\n' || str[i] == L'\0')
 		{
 			wordLen = i - lastID;
-			oneWord = new char[wordLen + 1];
-			oneWord[wordLen] = '\0';
+			oneWord = new wchar_t[wordLen + 1];
+			oneWord[wordLen] = L'\0';
 			for (int j = 0; j < wordLen; j++)
 				oneWord[j] = str[lastID + j];
 
@@ -307,24 +335,24 @@ void LChanger(char* str)
 	delete[] oneWord;
 	delete[] result;
 }
-void LSizer(char* str)
+void LSizer(wchar_t* str)
 {
-	for (int i = 0; i < strlen(str); i++)
+	for (int i = 0; i < lstrlen(str); i++)
 		if (str[i] == LUp(str[i]))
 			str[i] = LDown(str[i]);
 		else str[i] = LUp(str[i]);
 }
-void LogicSwitch(char* selected)
+void LogicSwitch(StrData selected)
 {
-	if (selected != NULL)
+	if (selected.str != NULL)
 		switch (switcher)
 		{
 		case _SWAP:
-			LChanger(selected);
+			LChanger(selected.str);
 			LogMsg("Смена языка выполнена");
 			break;
 		case _UPDOWN:
-			LSizer(selected);
+			LSizer(selected.str);
 			LogMsg("Смена регистра выполнена");
 			break;
 		default:
@@ -357,7 +385,7 @@ bool IsAllKeysUnpressed()
 			return false;
 	return true;
 }
-void EmulateACombinationWithCtrl(char key)
+void EmulateACombinationWithCtrl(wchar_t key)
 {
 	INPUT input[2] = { 0 };
 	int keysMuss[] = { VK_CONTROL, key };
@@ -398,8 +426,7 @@ NOTIFYICONDATA InterfaceConstructor()
 	ShowWindow(console, SW_HIDE);
 
 	//Я Русский
-	SetConsoleOutputCP(1251);
-	SetConsoleCP(1251);
+	setlocale(LC_ALL, "");
 
 	////	Регистрация класса (штука, чтобы "CALLBACK IconReaction" вызывалась)
 	WNDCLASS wc = { 0 };
@@ -409,7 +436,7 @@ NOTIFYICONDATA InterfaceConstructor()
 	RegisterClass(&wc);
 
 	////	Создание отдельного окна для трея. Окно скрываем
-	HWND trayWin = CreateWindow(wc.lpszClassName, L"TrayWin", 0, 0, 0, 0, 0, 0, 0,
+	HWND trayWin = CreateWindowW(wc.lpszClassName, wc.lpszClassName, 0, 0, 0, 0, 0, 0, 0,
 		wc.hInstance, 0);
 	////	Добавление окна (в виде иконки) в трей
 	NOTIFYICONDATA icon = { 0 };
@@ -439,12 +466,13 @@ int main()
 	keysComb toSWAP{ sizeof(toSWAP_M) / sizeof(toSWAP_M[0]), toSWAP_M, _SWAP };
 	keysComb toUPDOWN{ sizeof(toUPDOWN_M) / sizeof(toUPDOWN_M[0]), toUPDOWN_M, _UPDOWN };
 
-	char* conservation = NULL;
-	char* bufer = NULL;
-	char* selected = NULL;
+	StrData conservation{};
+	StrData selected{};
 
+	//Красивая консоль
 	printf("%s\n", LoadAndWriteTXT(IDT_TEXT2));
 
+	////	ЦАРЬ БАТЮШКА ЦИКЛ
 	while (!isExit)
 	{
 		if (IsKeysPressed(toSWAP) || IsKeysPressed(toUPDOWN))
@@ -456,7 +484,7 @@ int main()
 			ClearBufer();
 
 			////	LOGIC (CTRL+C / GET / *DO STAF* / SET / CTRL+V);
-			selected = NULL;
+			selected.str = NULL;
 
 			//Проблемные кнопки, мешающие копированию
 			while (GetAsyncKeyState(VK_LWIN) < 0 || GetAsyncKeyState(VK_RWIN) < 0
@@ -479,15 +507,20 @@ int main()
 			{
 				EmulateACombinationWithCtrl('C');
 				selected = GetBufer(false);
-				if (selected != NULL)
+				if (selected.str != NULL)
 					break;
 				CallbackMessage();
 			}
-			
 			//Скипаем логику если ничего не выделенно
-			if (GetBufer(true) == NULL)
+			if (GetBufer(true).str == NULL)
 			{
 				LogMsg("Ничего не выделенно");
+				SetBufer(conservation);
+				continue;
+			}
+			if (selected.format == CF_DIB)
+			{
+				LogMsg("Пропуск картинки");
 				SetBufer(conservation);
 				continue;
 			}
@@ -501,15 +534,15 @@ int main()
 			EmulateACombinationWithCtrl('V');
 
 			////	SET CONSERVATION;
-			SetBufer(conservation);
+				SetBufer(conservation);
 		}
 		CallbackMessage();
 		Sleep(10);
 	}
+	//Dectructor
 	Shell_NotifyIcon(NIM_DELETE, &icon);
 
-	delete[] bufer;
-	delete[] conservation;
-	delete[] selected;
+	delete[] conservation.str;
+	delete[] selected.str;
 	return 0;
 }

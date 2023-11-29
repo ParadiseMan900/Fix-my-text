@@ -1,0 +1,3 @@
+﻿  Fix My Text.cpp
+C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\Fix My Text.cpp(155,25): warning C4244: =: преобразование "SIZE_T" в "unsigned int", возможна потеря данных
+  Fix My Text.vcxproj -> C:\MainFolder\КОДИНГ\Serious projects\Fix My Text\x64\Debug\Fix My Text.exe
