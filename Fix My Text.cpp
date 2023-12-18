@@ -1,6 +1,7 @@
 ﻿//Code for "Fix my text" by Teslev Dmitry Sergeevich 2023
 #include <windows.h>
-#include <iostream>
+#include <locale.h>
+#include <stdio.h>
 #include "resource.h"
 
 #define GREATER_WIN10  22000
@@ -20,7 +21,6 @@
 
 
 HWND console;
-int switcher = 0;
 bool isExit = false;
 bool isConsole = false;
 
@@ -155,8 +155,9 @@ StrData GetBufer(bool print)
 		data.size = GlobalSize(hData);
 		if (bufer != NULL)
 		{
-			data.str = new wchar_t[data.size / sizeof(wchar_t)];
-			memcpy(data.str, bufer, data.size);
+			data.str = (wchar_t*)malloc(data.size);
+			if (data.str != NULL)
+				memcpy(data.str, bufer, data.size);
 		}
 	}
 	if (print)
@@ -298,7 +299,9 @@ void LChanger(wchar_t* str)
 
 	size_t origLen = lstrlen(str) + 1;
 	wchar_t* oneWord = NULL;
-	wchar_t* result = new wchar_t[origLen];
+	wchar_t* result = (wchar_t*)malloc(origLen * sizeof(wchar_t));
+	if (result == NULL)
+		return;
 
 	size_t counter = 0;
 	size_t wordLen = 0;
@@ -307,7 +310,9 @@ void LChanger(wchar_t* str)
 		if (str[i] == L' ' || str[i] == L'\t' || str[i] == L'\n' || str[i] == L'\0')
 		{
 			wordLen = i - lastID;
-			oneWord = new wchar_t[wordLen + 1];
+			oneWord = (wchar_t*)malloc((wordLen + 1) * sizeof(wchar_t));
+			if (oneWord == NULL)
+				continue;
 			oneWord[wordLen] = L'\0';
 			for (int j = 0; j < wordLen; j++)
 				oneWord[j] = str[lastID + j];
@@ -330,10 +335,10 @@ void LChanger(wchar_t* str)
 			result[i] = str[i];
 			lastID = (size_t)i + 1;
 		}
-	for (int i = 0; i < origLen-1; i++)
+	for (int i = 0; i < origLen - 1; i++)
 		str[i] = result[i];
-	delete[] oneWord;
-	delete[] result;
+	free(oneWord);
+	free(result);
 }
 void LSizer(wchar_t* str)
 {
@@ -342,7 +347,7 @@ void LSizer(wchar_t* str)
 			str[i] = LDown(str[i]);
 		else str[i] = LUp(str[i]);
 }
-void LogicSwitch(StrData selected)
+void LogicSwitch(StrData selected, int switcher)
 {
 	if (selected.str != NULL)
 		switch (switcher)
@@ -366,16 +371,14 @@ struct keysComb
 	int* names;
 	int ID;
 };
-bool IsKeysPressed(keysComb comb)
+int IsKeysPressed(keysComb comb)
 {
 	for (int i = 0; i < comb.len; i++)
 	{
 		if (GetAsyncKeyState(comb.names[i]) >= 0)
-			return false;
+			return 0;
 	}
-	if (comb.ID != 0)
-		switcher = comb.ID;
-	return true;
+	return comb.ID;
 }
 bool IsAllKeysUnpressed()
 {
@@ -388,7 +391,6 @@ bool IsAllKeysUnpressed()
 void EmulateACombinationWithCtrl(wchar_t key)
 {
 	INPUT input[2] = { 0 };
-	int keysMuss[] = { VK_CONTROL, key };
 	input[0].type = INPUT_KEYBOARD;
 	input[0].ki.wVk = VK_CONTROL;
 	input[0].ki.dwFlags = 0;
@@ -452,7 +454,7 @@ NOTIFYICONDATA InterfaceConstructor()
 }
 int main()
 {
-	////	Проверки, создание окон, включение русского и т.п.
+	////	Проверки, создание и регестрация окна, включение русского и т.п.
 	//Это нужно, чтобы не хранились ненужные переменные
 	NOTIFYICONDATA icon = InterfaceConstructor();
 	Shell_NotifyIcon(NIM_ADD, &icon);
@@ -460,7 +462,7 @@ int main()
 	////	Список ключей клавиатуры:
 	//https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
-	////	ВСЕ ФУКЦИИ 
+	////	ВСЕ ПЕРЕМЕННЫЕ 
 	int toSWAP_M[]{ VK_LWIN, VK_LCONTROL };
 	int toUPDOWN_M[]{ VK_LWIN, VK_LMENU };
 	keysComb toSWAP{ sizeof(toSWAP_M) / sizeof(toSWAP_M[0]), toSWAP_M, _SWAP };
@@ -468,6 +470,7 @@ int main()
 
 	StrData conservation{};
 	StrData selected{};
+	int switcher = 0;
 
 	//Красивая консоль
 	printf("%s\n", LoadAndWriteTXT(IDT_TEXT2));
@@ -477,6 +480,10 @@ int main()
 	{
 		if (IsKeysPressed(toSWAP) || IsKeysPressed(toUPDOWN))
 		{
+			switcher = IsKeysPressed(toSWAP);
+			if (!switcher)
+				switcher = IsKeysPressed(toUPDOWN);
+
 			printf("-----------------------------------------------\n");
 					
 			////	GET CONSERVATION;
@@ -497,9 +504,9 @@ int main()
 			//Проверка на то что это не консоль (в консоли ctrl+c = смерть)
 			if (GetForegroundWindow() == console)
 			{
-				LogMsg("Предотвращение ошибки. Безопостный выход");
+				LogMsg("Предотвращение ошибки. Не используйте FMT внутри консоли!");
 				SetBufer(conservation);
-				return 1;
+				continue;
 			}
 
 			//Эмуляция Ctrl+C
@@ -526,15 +533,15 @@ int main()
 			}
 			ClearBufer();
 
-			//Самая главноя функция
-			LogicSwitch(selected);                                        //<<<===
+			//Самая главная функция
+			LogicSwitch(selected, switcher);                                        //<<<===
 			SetBufer(selected);
 
 			//Эмуляция Ctrl+V
 			EmulateACombinationWithCtrl('V');
 
 			////	SET CONSERVATION;
-				SetBufer(conservation);
+			SetBufer(conservation);
 		}
 		CallbackMessage();
 		Sleep(10);
@@ -542,7 +549,7 @@ int main()
 	//Dectructor
 	Shell_NotifyIcon(NIM_DELETE, &icon);
 
-	delete[] conservation.str;
-	delete[] selected.str;
+	free(conservation.str);
+	free(selected.str);
 	return 0;
 }
