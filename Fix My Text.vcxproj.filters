@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Fix My Text.cpp">
+    <ClCompile Include="Fix My Text.c">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
   </ItemGroup>
@@ -42,8 +42,12 @@
     <Image Include="KONSOL.bmp">
       <Filter>Файлы ресурсов</Filter>
     </Image>
+    <Image Include="REVERS.bmp">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Text Include="README.txt" />
+    <Text Include="FMT_Consol.txt" />
   </ItemGroup>
 </Project>

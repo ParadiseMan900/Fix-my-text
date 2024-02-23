@@ -1,0 +1,6 @@
+https://stackoverflow.com/questions/252226/signing-a-windows-exe-file
+
+cd x64\Release
+makecert -r -pe -$ commercial -n CN="MLIT" -ss my -sky signature FMT_SER.cer
+signtool sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "Fix My Text.exe"
+del *.cer
