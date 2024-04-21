@@ -45,9 +45,11 @@
     <Image Include="REVERS.bmp">
       <Filter>Файлы ресурсов</Filter>
     </Image>
+    <Image Include="AID_HELP.bmp">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="README.txt" />
     <Text Include="FMT_Consol.txt" />
   </ItemGroup>
 </Project>

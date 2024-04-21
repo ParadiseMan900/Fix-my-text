@@ -7,7 +7,7 @@
 #pragma comment(lib, "WinInet.lib") 
 
 //FMT Version data
-#define	VERSION			"v5.3"
+#define	VERSION			"v6.0"
 #define VERSIONID		10
 //Icon Reaction IDs
 #define IR_HELP			0
@@ -24,18 +24,30 @@
 #define SC_RED			12
 #define SC_YELLOW		14
 #define SC_WHITE		15
+#define SetColor(colID) SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), colID)
 //Time Sleep IDs
 #define TS_PROCESSOR	10
-#define TS_NORMAL		25
+#define TS_NORMAL		15
 #define TS_SLOW_APP		250
 //Default struct data
 #define D_STRDATA		{NULL, 0, CF_UNICODETEXT}
+//Window Class Name
+#define WCN_ICON		L"TrayWin"
+#define WCN_HELP		L"HELP"
+//Help Window Size
+#define WH_WIDTH		400
+#define WH_HEIGHT		250
+//Help Timer Settings
+#define TID_INTRO		1
+#define ANIM_SIZE		45
+#define ANIM_INTERVAL	18
 
-HWND console = NULL;
-BOOL isExit = FALSE;
-BOOL isVisible = FALSE;
-BOOL isChangeLang = TRUE;
-BOOL isNewVersion = FALSE;
+HWND console =			NULL;
+HWND help =				NULL;
+BOOL isExit =			FALSE;
+BOOL isVisible =		FALSE;
+BOOL isChangeLang =		TRUE;
+BOOL isNewVersion =		FALSE;
 
 struct LanguageLib
 {
@@ -75,6 +87,55 @@ const char* LoadAndWriteTXT(int nameID)
 	}
 	return data;
 }
+HWND FindMainWindow()
+{
+	DWORD crawlProcID = 0;
+	DWORD mainProcID = GetCurrentProcessId();
+	HWND crawlWin = GetTopWindow(GetDesktopWindow());
+	while (crawlWin)
+	{
+		if (IsWindowVisible(crawlWin))
+		{
+			GetWindowThreadProcessId(crawlWin, &crawlProcID);
+			if (crawlProcID == mainProcID)
+				return crawlWin;
+		}
+		crawlWin = GetWindow(crawlWin, GW_HWNDNEXT); //Обход всех окон
+	}
+	return NULL;
+}
+void AddDebugConsole()
+{
+	AllocConsole();
+	FILE* safeTemp;
+	freopen_s(&safeTemp, "CON", "w", stdout);
+	SetConsoleTitleW(L"Fix My Text - Debug mode");
+	console = FindMainWindow();
+	SetConsoleOutputCP(1251);
+	setlocale(LC_ALL, "");
+}
+void PrintCenterText(HDC hdc, SIZE size, unsigned int y, wchar_t* text,
+	COLORREF colour, double fontScale, BOOL isBold, BOOL isItalic)
+{
+	HFONT font = CreateFontW((int)(30 * fontScale), (int)(15 * fontScale), 0, 0, isBold ? FW_EXTRABOLD : FW_NORMAL,
+		isItalic, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+		VARIABLE_PITCH, L"Consolas");
+	SelectObject(hdc, font);
+	GetTextExtentPoint32W(hdc, text, lstrlenW(text), &size);
+	if (colour != -1)
+	{
+		HPEN pen = CreatePen(PS_SOLID, 0, colour);
+		HBRUSH brush = CreateSolidBrush(colour);
+		SelectObject(hdc, pen);
+		SelectObject(hdc, brush);
+		RoundRect(hdc, (WH_WIDTH >> 1) - (size.cx >> 1) - 5, y - 2,
+			(WH_WIDTH >> 1) + (size.cx >> 1) + 5, y + size.cy + 2, 15, 15);
+		DeleteObject(pen);
+		DeleteObject(brush);
+	}
+	TextOutW(hdc, (WH_WIDTH >> 1) - (size.cx >> 1), y, text, lstrlenW(text));
+	DeleteObject(font);
+}
 LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARAM action)
 {
 	//Создание менюшки с кнопками
@@ -94,12 +155,12 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARA
 			if (isNewVersion)
 			{
 				AppendMenuW(hMenu, 0, IR_NEWVER, L"Доступна новая версия!");
-				AppendMenuW(hMenu, MF_SEPARATOR, NULL, NULL);
+				AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
 			}
 			AppendMenuW(hMenu, 0, IR_HELP, L"Помощь");
 			AppendMenuW(hMenu, isChangeLang ? MF_CHECKED : MF_UNCHECKED, IR_SYSSWITCH,
 				L"Автоматически менять язык системы");
-			AppendMenuW(hMenu, MF_SEPARATOR, NULL, NULL);
+			AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
 			AppendMenuW(hMenu, 0, IR_EXIT, L"Выход");
 
 			SetMenuItemBitmaps(hMenu, IR_HELP, MF_BYCOMMAND,
@@ -122,10 +183,22 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARA
 		switch (commandID)
 		{
 		case IR_HELP:
-			MessageBoxA(NULL, LoadAndWriteTXT(IDT_TEXT1), "Помощь", 0);
+			////	Создание окна.
+			if (!help)
+				help = CreateWindowW(WCN_HELP, L"Помощь", WS_SYSMENU | WS_VISIBLE,
+					(GetSystemMetrics(SM_CXSCREEN) >> 1) - (WH_WIDTH >> 1),
+					(GetSystemMetrics(SM_CYSCREEN) >> 1) - (WH_HEIGHT >> 1),
+					WH_WIDTH + 16, WH_HEIGHT + 39, 0, 0, GetModuleHandleW(NULL), 0);
+			else SetActiveWindow(help);
 			break;
 		case IR_HIDESHOW:
-			ShowWindow(console, (isVisible = !isVisible) ? SW_SHOW : SW_HIDE);
+			isVisible = !isVisible;
+			if (!console)
+			{
+				AddDebugConsole();
+				printf("%s\n", LoadAndWriteTXT(IDT_TEXT1));
+			}
+			else ShowWindow(console, isVisible ? SW_SHOW : SW_HIDE);
 			break;
 		case IR_SYSSWITCH:
 			isChangeLang = !isChangeLang;
@@ -139,22 +212,60 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARA
 			break;
 		}
 	}
-	return DefWindowProc(window, message, commandID, action);
+	return DefWindowProcW(window, message, commandID, action);
+}
+LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARAM action)
+{
+	static HBITMAP hBitMap = NULL;
+	static unsigned xID = 0;
+	switch (message)
+	{
+	case WM_CREATE:
+		xID = 0;
+		hBitMap = (HBITMAP)LoadImageW(GetModuleHandleW(NULL),
+			MAKEINTRESOURCEW(IDB_BITMAP5), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
+		SetTimer(window, TID_INTRO, ANIM_INTERVAL, (TIMERPROC)NULL);
+		break;
+	case WM_TIMER:
+		if (++xID == ANIM_SIZE)
+		{
+			KillTimer(window, TID_INTRO);
+			xID--;
+		}	
+		else SendMessageW(window, WM_PAINT, 0, 0);
+		return 0;
+	case WM_PAINT:
+	{
+		HDC hdc = GetDC(window);
+		HDC tempHdc = CreateCompatibleDC(hdc);
+		SelectObject(tempHdc, hBitMap);
+		BitBlt(hdc, 0, 0, WH_WIDTH, WH_HEIGHT, tempHdc, WH_WIDTH * xID, 0, SRCCOPY);
+		DeleteDC(tempHdc);
+		ReleaseDC(window, hdc);
+	}
+	break;
+	case WM_CLOSE:
+		DeleteObject(hBitMap);
+		DestroyWindow(help);
+		KillTimer(window, TID_INTRO);
+		help = NULL;
+		PostQuitMessage(0);
+		return 0;
+	}
+	return DefWindowProcW(window, message, commandID, action);
 }
 void CallbackMessage()
 {
 	MSG msg;
 	ZeroMemory(&msg, sizeof(msg));
-	if (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE));
+	if (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
 		DispatchMessageW(&msg);
 }
 /////////////////////////////////////////////////////////////////////////////////////
-void SetColor(int colorID)
-{
-	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), colorID);
-}
 void PrintBuferResult(struct StrData data, BOOL isGet)
 {
+	if (!console)
+		return;
 	if (isGet)
 	{
 		SetColor(SC_RED);
@@ -227,6 +338,8 @@ void SetBufer(struct StrData* data)
 }
 void LogMsg(const char* msg)
 {
+	if (!console)
+		return;
 	SetColor(SC_GREEN);
 	printf("Message:\t%s\n", msg);
 	SetColor(SC_WHITE);
@@ -306,9 +419,10 @@ wchar_t LSwap(wchar_t ch, BOOL eng, struct LanguageLib lib)
 }
 void LChanger(wchar_t* str)
 {
-	struct LanguageLib RusLib = { L"`~@#$^&qwertyuiop[{]}|asdfghjkl;:'\"zxcvbnm,<.>/?" ,
-		L"ёЁ\"№;:?йцукенгшщзхХъЪ/фывапролджЖэЭячсмитьбБюЮ.,",
-			L"1234567890!%*()-_=+\\", 49 , 21 };
+	struct LanguageLib RusLib = 
+	{ L"`~@#$^&qwertyuiop[{]}|asdfghjkl;:'\"zxcvbnm,<.>/?" ,
+	  L"ёЁ\"№;:?йцукенгшщзхХъЪ/фывапролджЖэЭячсмитьбБюЮ.,",
+	  L"1234567890!%*()-_=+\\", 49 , 21 };
 
 	BOOL isBig = FALSE;
 	BOOL isEng = FALSE;
@@ -380,14 +494,12 @@ void LogicSwitch(struct StrData* selected, int switcher)
 	}
 }
 /////////////////////////////////////////////////////////////////////////////////////
-int IsKeysPressed(struct keysComb comb)
+int IsKeysPressed(const struct keysComb* comb)
 {
-	for (int i = 0; i < comb.len; i++)
-	{
-		if (GetAsyncKeyState(comb.names[i]) >= 0)
+	for (unsigned int i = 0; i < comb->len; i++)
+		if (GetAsyncKeyState(comb->names[i]) >= 0) 
 			return 0;
-	}
-	return comb.ID;
+	return comb->ID;
 }
 void EmulateACombinationWithCtrl(wchar_t key)
 {
@@ -403,53 +515,6 @@ void EmulateACombinationWithCtrl(wchar_t key)
 	SendInput(4, input, sizeof(INPUT));
 }
 /////////////////////////////////////////////////////////////////////////////////////
-NOTIFYICONDATA InterfaceConstructor()
-{
-	//Я Русский
-	setlocale(LC_ALL, "");
-
-	////	Регистрация класса (штука, чтобы "CALLBACK IconReaction" вызывалась)
-	WNDCLASS wc;
-	ZeroMemory(&wc, sizeof(wc));
-	wc.lpfnWndProc = IconReaction;
-	wc.hInstance = GetModuleHandleW(NULL);
-	wc.lpszClassName = L"TrayWin";
-	RegisterClassW(&wc);
-
-	////	Создание отдельного окна для трея.
-	HWND trayWin = CreateWindowW(wc.lpszClassName, wc.lpszClassName, 0, 0, 0, 0, 0, 0, 0, wc.hInstance, 0);
-
-	////	Добавление окна (в виде иконки) в трей
-	NOTIFYICONDATA icon;
-	ZeroMemory(&icon, sizeof(icon));
-	icon.cbSize = sizeof(icon);
-	icon.hWnd = trayWin;
-	icon.uVersion = NOTIFYICON_VERSION;
-	icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-	icon.uCallbackMessage = WM_USER;
-	//IDI_ICON1 - ID Иконки из файла ресурсов.
-	icon.hIcon = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_ICON1));
-	const wchar_t* tip = L"\"Fix my text\"\nНажмите ПКМ для открытия меню";
-	wcscpy_s(icon.szTip, wcslen(tip) + 1, tip);
-	return icon;
-}
-HWND FindMainWindow()
-{
-	DWORD crawlProcID = 0;
-	DWORD mainProcID = GetCurrentProcessId();
-	HWND crawlWin = GetTopWindow(GetDesktopWindow());
-	while (crawlWin)
-	{
-		if (IsWindowVisible(crawlWin))
-		{
-			GetWindowThreadProcessId(crawlWin, &crawlProcID);
-			if (crawlProcID == mainProcID)
-				return crawlWin;
-		}
-		crawlWin = GetWindow(crawlWin, GW_HWNDNEXT); //Обход всех окон
-	}
-	return NULL;
-}
 BOOL IsNewVersionExist()
 {
 	HINTERNET hInterOpen = InternetOpenA("fmt", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
@@ -485,17 +550,50 @@ BOOL IsNewVersionExist()
 	free(str);
 	return result;
 }
-int main()
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char* cmdline, _In_ int cmdshow)
 {
-	////	Поиск, создание и регестрация окна, проверки, включение русского и т.п.
-	//Это нужно, чтобы не хранились ненужные переменные
-	console = FindMainWindow();
-	if (!console)
-		return 0;
-	ShowWindow(console, SW_HIDE);
-	NOTIFYICONDATA icon = InterfaceConstructor();
-	Shell_NotifyIconW(NIM_ADD, &icon);
+	//	Проверка на существование запущенной программы
+	HANDLE hMutex = CreateMutexW(0, TRUE, L"FMT");
+	if (!hMutex || GetLastError() == ERROR_ALREADY_EXISTS)
+		return 1;
 
+	////	Поиск, создание и регестрация окна, проверки, и т.п.
+	NOTIFYICONDATA icon;
+	ZeroMemory(&icon, sizeof(icon));
+	{
+		////	Регистрация класса (штука, чтобы "CALLBACK IconReaction" вызывалась)
+		WNDCLASS wc;
+		ZeroMemory(&wc, sizeof(wc));
+		wc.lpfnWndProc = IconReaction;
+		wc.hInstance = GetModuleHandleW(NULL);
+		wc.lpszClassName = WCN_ICON;
+		RegisterClassW(&wc);
+
+		////	Создание и добавление окна (в виде иконки) в трей
+		icon.cbSize = sizeof(icon);
+		icon.hWnd = CreateWindowW(wc.lpszClassName, wc.lpszClassName, 0, 0, 0, 0, 0, 0, 0, wc.hInstance, 0);
+		icon.uVersion = NOTIFYICON_VERSION;
+		icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+		icon.uCallbackMessage = WM_USER;
+		//IDI_ICON1 - ID Иконки из файла ресурсов.
+		icon.hIcon = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_ICON1));
+		const wchar_t* tip = L"Fix my text";
+		wcscpy_s(icon.szTip, wcslen(tip) + 1, tip);
+
+
+		////	Регистрация класса (штука, чтобы "CALLBACK HelpReaction" вызывалась)
+		WNDCLASS wc2;
+		ZeroMemory(&wc2, sizeof(wc2));
+		wc2.lpfnWndProc = HelpReaction;
+		wc2.hInstance = GetModuleHandleW(NULL);
+		wc2.lpszClassName = WCN_HELP;
+		wc2.hbrBackground = CreateSolidBrush(RGB(34, 30, 26));
+		RegisterClassW(&wc2);
+	}
+	Shell_NotifyIconW(NIM_ADD, &icon);
 	////	Список ключей клавиатуры:
 	//https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
@@ -509,18 +607,17 @@ int main()
 	struct StrData selected = D_STRDATA;
 	int switcher = 0;
 
-	//Красивая консоль
-	printf("%s\n", LoadAndWriteTXT(IDT_TEXT2));
-
 	//Провкерка новой версии
 	isNewVersion = IsNewVersionExist();
-
+	unsigned long long ggg = 0;
 	////	ЦАРЬ БАТЮШКА ЦИКЛ
 	while (!isExit)
 	{
-		if ((switcher = IsKeysPressed(toSWAP)) || (switcher = IsKeysPressed(toUPDOWN)))
+		//printf("%lld\n", ggg++);
+		if ((switcher = IsKeysPressed(&toSWAP)) || (switcher = IsKeysPressed(&toUPDOWN)))
 		{
-			printf("-----------------------------------------------\n");
+			if (console)
+				printf("-----------------------------------------------\n");
 
 			////	GET CONSERVATION;
 			conservation = GetBufer();
@@ -538,7 +635,7 @@ int main()
 			}
 
 			//Проверка на то что это не консоль (в консоли ctrl+c = смерть)
-			if (GetForegroundWindow() == console)
+			if (console && GetForegroundWindow() == console)
 			{
 				LogMsg("Предотвращение ошибки. Не используйте FMT внутри консоли!");
 				SetBufer(&conservation);
@@ -547,10 +644,9 @@ int main()
 
 			//Эмуляция Ctrl+C
 			EmulateACombinationWithCtrl('C');
-			for (int i = 0; i < TS_NORMAL; i++)
+			for (unsigned i = 0; i < TS_NORMAL; i++)
 			{
-				selected = GetBufer();
-				if (selected.str)
+				if ((selected = GetBufer()).str)
 				{
 					PrintBuferResult(selected, TRUE);
 					break;
@@ -595,6 +691,12 @@ int main()
 		Sleep(TS_PROCESSOR);
 	}
 	//Dectructor
+	DestroyWindow(icon.hWnd);
 	Shell_NotifyIconW(NIM_DELETE, &icon);
+	UnregisterClassW(WCN_ICON, GetModuleHandleW(NULL));
+	UnregisterClassW(WCN_HELP, GetModuleHandleW(NULL));
+	if (console)
+		FreeConsole();
+	ReleaseMutex(hMutex);
 	return 0;
 }
