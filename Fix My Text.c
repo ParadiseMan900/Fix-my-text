@@ -1,79 +1,77 @@
 ﻿//Code for "Fix my text" by Teslev Dmitry Sergeevich 2023 - 2024
+#include "resource.h"
 #include <windows.h>
 #include <locale.h>
 #include <stdio.h>
-#include "resource.h"
 #include <wininet.h>
 #pragma comment(lib, "WinInet.lib") 
 
 //FMT Version data
-#define	VERSION			"v6.0"
-#define VERSIONID		10
+#define	VERSION				"v6.0"
+#define VERSIONID			10U
 //Icon Reaction IDs
-#define IR_HELP			0
-#define IR_HIDESHOW		1
-#define IR_SYSSWITCH	2
-#define IR_EXIT			3
-#define IR_NEWVER		4
+#define IR_HELP				0U
+#define IR_HIDESHOW			1U
+#define IR_SYSSWITCH		2U
+#define IR_EXIT				3U
+#define IR_NEWVER			4U
 //Logic Switch IDs
-#define LS_SWAP			1
-#define LS_UPDOWN		2
+#define LID_SWAP			1U
+#define LID_UPDOWN			2U
 //Set Color IDs
-#define SC_GREEN		10
-#define SC_BLUE			11
-#define SC_RED			12
-#define SC_YELLOW		14
-#define SC_WHITE		15
-#define SetColor(colID) SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), colID)
+#define SC_GREEN			FOREGROUND_GREEN
+#define SC_SKY				FOREGROUND_BLUE | FOREGROUND_GREEN
+#define SC_RED				FOREGROUND_RED
+#define SC_YELLOW			FOREGROUND_GREEN | FOREGROUND_RED
+#define SC_WHITE			FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE
+#define SC_NULL				SC_WHITE | BACKGROUND_RED
+#define SetColor(colID)		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), colID | FOREGROUND_INTENSITY)
 //Time Sleep IDs
-#define TS_PROCESSOR	10
-#define TS_NORMAL		15
-#define TS_SLOW_APP		250
+#define TS_PROCESSOR		5U
+#define TS_NORMAL			15U
+#define TS_SLOW_APP			250U
 //Default struct data
-#define D_STRDATA		{NULL, 0, CF_UNICODETEXT}
+#define D_STRDATA			{NULL, 0, 0}
+//Сonstant case difference
+#define CASE_DIFFERENCE		32U
 //Window Class Name
-#define WCN_ICON		L"TrayWin"
-#define WCN_HELP		L"HELP"
+#define WCN_ICON			L"TrayWin"
+#define WCN_HELP			L"HELP"
 //Help Window Size
-#define WH_WIDTH		400
-#define WH_HEIGHT		250
-//Help Timer Settings
-#define TID_INTRO		1
-#define ANIM_SIZE		45
-#define ANIM_INTERVAL	18
+#define WH_WIDTH			400U
+#define WH_HEIGHT			250U
+//Window Inaccuracy
+#define WI_WIDTH			16U
+#define WI_HEIGHT			39U
+//Timer Settings
+#define TID_PROBLEM			1U
+#define TID_INTRO			2U
+//Animation Settings
+#define ANIM_SIZE			58U
+#define ANIM_INTERVAL		5U
 
-HWND console =			NULL;
-HWND help =				NULL;
-BOOL isExit =			FALSE;
-BOOL isVisible =		FALSE;
-BOOL isChangeLang =		TRUE;
-BOOL isNewVersion =		FALSE;
+typedef unsigned char bool;
 
-struct LanguageLib
-{
-	const wchar_t* engChars;
-	const wchar_t* otherChars;
-	const wchar_t* sameChars;
-	int sizeAll;
-	int sizeSame;
-};
+HWND consoleWin =			NULL;
+HWND helpWin =				NULL;
+HMODULE histance =			NULL;
+bool isExit =				FALSE;
+bool isVisible =			FALSE;
+bool isChangeLang =			TRUE;
+bool isNewVersion =			FALSE;
+bool isProblemKeys =		FALSE;
+
 struct StrData
 {
 	wchar_t* str;
-	size_t size;
-	unsigned int format;
-};
-struct keysComb
-{
-	unsigned int len;
-	int* names;
-	int ID;
+	size_t byteSize;
+	unsigned format;
 };
 /////////////////////////////////////////////////////////////////////////////////////
 const char* LoadAndWriteTXT(int nameID)
 {
 	const char* data = "";
-	HINSTANCE handle = GetModuleHandleW(NULL);
+	HINSTANCE handle = histance;
 
 	//Ссылка на ресурс
 	HRSRC rcNameID = FindResourceW(handle, MAKEINTRESOURCEW(nameID),
@@ -87,7 +85,7 @@ const char* LoadAndWriteTXT(int nameID)
 	}
 	return data;
 }
-HWND FindMainWindow()
+HWND FindMainWindow(void)
 {
 	DWORD crawlProcID = 0;
 	DWORD mainProcID = GetCurrentProcessId();
@@ -104,113 +102,116 @@ HWND FindMainWindow()
 	}
 	return NULL;
 }
-void AddDebugConsole()
+void AddDebugConsole(void)
 {
 	AllocConsole();
 	FILE* safeTemp;
 	freopen_s(&safeTemp, "CON", "w", stdout);
 	SetConsoleTitleW(L"Fix My Text - Debug mode");
-	console = FindMainWindow();
+	consoleWin = FindMainWindow();
 	SetConsoleOutputCP(1251);
 	setlocale(LC_ALL, "");
-}
-void PrintCenterText(HDC hdc, SIZE size, unsigned int y, wchar_t* text,
-	COLORREF colour, double fontScale, BOOL isBold, BOOL isItalic)
-{
-	HFONT font = CreateFontW((int)(30 * fontScale), (int)(15 * fontScale), 0, 0, isBold ? FW_EXTRABOLD : FW_NORMAL,
-		isItalic, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-		VARIABLE_PITCH, L"Consolas");
-	SelectObject(hdc, font);
-	GetTextExtentPoint32W(hdc, text, lstrlenW(text), &size);
-	if (colour != -1)
-	{
-		HPEN pen = CreatePen(PS_SOLID, 0, colour);
-		HBRUSH brush = CreateSolidBrush(colour);
-		SelectObject(hdc, pen);
-		SelectObject(hdc, brush);
-		RoundRect(hdc, (WH_WIDTH >> 1) - (size.cx >> 1) - 5, y - 2,
-			(WH_WIDTH >> 1) + (size.cx >> 1) + 5, y + size.cy + 2, 15, 15);
-		DeleteObject(pen);
-		DeleteObject(brush);
-	}
-	TextOutW(hdc, (WH_WIDTH >> 1) - (size.cx >> 1), y, text, lstrlenW(text));
-	DeleteObject(font);
+	SetConsoleCtrlHandler(0, TRUE);
 }
 LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARAM action)
 {
-	//Создание менюшки с кнопками
-	if ((message == WM_USER) &&
-		(action == WM_RBUTTONUP || action == WM_LBUTTONUP || action == WM_MBUTTONDBLCLK))
+	switch (message)
 	{
-		HMENU hMenu = CreatePopupMenu();
-		if (action == WM_MBUTTONDBLCLK)
+	case WM_CREATE:
+		RegisterHotKey(window, LID_SWAP, MOD_CONTROL | MOD_WIN, 0);
+		RegisterHotKey(window, LID_UPDOWN, MOD_ALT | MOD_WIN, 0);
+		break;
+	case WM_HOTKEY:
+		SetTimer(window, TID_PROBLEM, TS_PROCESSOR, NULL);
+		isProblemKeys = TRUE;
+		break;
+	case WM_TIMER:
+		if (GetAsyncKeyState(VK_LWIN) >= 0 && GetAsyncKeyState(VK_RWIN) >= 0
+			&& GetAsyncKeyState(VK_MENU) >= 0 && GetAsyncKeyState(VK_CONTROL) >= 0)
 		{
-			AppendMenuW(hMenu, isVisible ? MF_CHECKED : MF_UNCHECKED, IR_HIDESHOW,
-				L"Режим разработчика");
-			SetMenuItemBitmaps(hMenu, IR_HIDESHOW, MF_BYCOMMAND,
-				LoadBitmapW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDB_BITMAP3)), 0);
+			isProblemKeys = FALSE;
+			KillTimer(window, TID_PROBLEM);
 		}
-		else
+		break;
+	case WM_USER:
+		//Создание менюшки с кнопками
+		if (action == WM_RBUTTONUP || action == WM_LBUTTONUP || action == WM_MBUTTONDBLCLK)
 		{
-			if (isNewVersion)
+			HMENU hMenu = CreatePopupMenu();
+			if (action == WM_MBUTTONDBLCLK)
 			{
-				AppendMenuW(hMenu, 0, IR_NEWVER, L"Доступна новая версия!");
-				AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenuW(hMenu, isVisible ? MF_CHECKED : MF_UNCHECKED, IR_HIDESHOW,
+					L"Режим разработчика");
+				SetMenuItemBitmaps(hMenu, IR_HIDESHOW, MF_BYCOMMAND,
+					LoadBitmapW(histance, MAKEINTRESOURCEW(IDB_BITMAP3)), 0);
 			}
-			AppendMenuW(hMenu, 0, IR_HELP, L"Помощь");
-			AppendMenuW(hMenu, isChangeLang ? MF_CHECKED : MF_UNCHECKED, IR_SYSSWITCH,
-				L"Автоматически менять язык системы");
-			AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-			AppendMenuW(hMenu, 0, IR_EXIT, L"Выход");
+			else
+			{
+				if (isNewVersion)
+				{
+					AppendMenuW(hMenu, 0, IR_NEWVER, L"Доступна новая версия!");
+					AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+				}
+				AppendMenuW(hMenu, 0, IR_HELP, L"Помощь");
+				AppendMenuW(hMenu, isChangeLang ? MF_CHECKED : MF_UNCHECKED, IR_SYSSWITCH,
+					L"Автоматически менять язык системы");
+				AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenuW(hMenu, 0, IR_EXIT, L"Выход");
 
-			SetMenuItemBitmaps(hMenu, IR_HELP, MF_BYCOMMAND,
-				LoadBitmapW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDB_BITMAP1)), 0);
-			SetMenuItemBitmaps(hMenu, IR_SYSSWITCH, MF_BYCOMMAND,
-				LoadBitmapW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDB_BITMAP4)), 0);
-			SetMenuItemBitmaps(hMenu, IR_EXIT, MF_BYCOMMAND,
-				LoadBitmapW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDB_BITMAP2)), 0);
+				SetMenuItemBitmaps(hMenu, IR_HELP, MF_BYCOMMAND,
+					LoadBitmapW(histance, MAKEINTRESOURCEW(IDB_BITMAP1)), 0);
+				SetMenuItemBitmaps(hMenu, IR_SYSSWITCH, MF_BYCOMMAND,
+					LoadBitmapW(histance, MAKEINTRESOURCEW(IDB_BITMAP4)), 0);
+				SetMenuItemBitmaps(hMenu, IR_EXIT, MF_BYCOMMAND,
+					LoadBitmapW(histance, MAKEINTRESOURCEW(IDB_BITMAP2)), 0);
+			}
+			POINT pt;
+			GetCursorPos(&pt);
+			SetForegroundWindow(window);
+			//TPM_BOTTOMALIGN == Меню правее курсора
+			TrackPopupMenu(hMenu, TPM_BOTTOMALIGN, pt.x, pt.y, 0, window, 0);
+			DestroyMenu(hMenu);
 		}
-		POINT pt;
-		GetCursorPos(&pt);
-		SetForegroundWindow(window);
-		//TPM_BOTTOMALIGN == Меню правее курсора
-		TrackPopupMenu(hMenu, TPM_BOTTOMALIGN, pt.x, pt.y, 0, window, 0);
-	}
-
-	//Реакция на кнопки в меню
-	if (message == WM_COMMAND)
-	{
+		break;
+	case WM_COMMAND:
+		//Реакция на кнопки в меню
 		switch (commandID)
 		{
 		case IR_HELP:
 			////	Создание окна.
-			if (!help)
-				help = CreateWindowW(WCN_HELP, L"Помощь", WS_SYSMENU | WS_VISIBLE,
+			if (!helpWin)
+				helpWin = CreateWindowW(WCN_HELP, L"Помощь", WS_SYSMENU | WS_VISIBLE,
 					(GetSystemMetrics(SM_CXSCREEN) >> 1) - (WH_WIDTH >> 1),
 					(GetSystemMetrics(SM_CYSCREEN) >> 1) - (WH_HEIGHT >> 1),
-					WH_WIDTH + 16, WH_HEIGHT + 39, 0, 0, GetModuleHandleW(NULL), 0);
-			else SetActiveWindow(help);
+					WH_WIDTH + WI_WIDTH, WH_HEIGHT + WI_HEIGHT, 0, 0, histance, 0);
+			else SetActiveWindow(helpWin);
 			break;
 		case IR_HIDESHOW:
 			isVisible = !isVisible;
-			if (!console)
+			if (!consoleWin)
 			{
 				AddDebugConsole();
 				printf("%s\n", LoadAndWriteTXT(IDT_TEXT1));
 			}
-			else ShowWindow(console, isVisible ? SW_SHOW : SW_HIDE);
+			else ShowWindow(consoleWin, isVisible ? SW_SHOW : SW_HIDE);
 			break;
 		case IR_SYSSWITCH:
 			isChangeLang = !isChangeLang;
 			break;
 		case IR_EXIT:
 			isExit = TRUE;
+			UnregisterHotKey(window, LID_SWAP);
+			UnregisterHotKey(window, LID_UPDOWN);
+			PostQuitMessage(0);
 			break;
 		case IR_NEWVER:
 			system("start https://github.com/ParadiseMan900/Fix-my-text/releases/latest");
 		default:
 			break;
 		}
+		break;
+	default:
+		break;
 	}
 	return DefWindowProcW(window, message, commandID, action);
 }
@@ -222,49 +223,47 @@ LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARA
 	{
 	case WM_CREATE:
 		xID = 0;
-		hBitMap = (HBITMAP)LoadImageW(GetModuleHandleW(NULL),
+		hBitMap = (HBITMAP)LoadImageW(histance,
 			MAKEINTRESOURCEW(IDB_BITMAP5), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
 		SetTimer(window, TID_INTRO, ANIM_INTERVAL, (TIMERPROC)NULL);
-		break;
+		return 0;
 	case WM_TIMER:
-		if (++xID == ANIM_SIZE)
-		{
-			KillTimer(window, TID_INTRO);
-			xID--;
-		}	
-		else SendMessageW(window, WM_PAINT, 0, 0);
+		xID == ANIM_SIZE - 1 ?	KillTimer(window, TID_INTRO) : xID++;
+		InvalidateRect(window, NULL, TRUE);
 		return 0;
 	case WM_PAINT:
 	{
-		HDC hdc = GetDC(window);
+		PAINTSTRUCT ps;
+		HDC hdc = BeginPaint(window, &ps);
 		HDC tempHdc = CreateCompatibleDC(hdc);
 		SelectObject(tempHdc, hBitMap);
 		BitBlt(hdc, 0, 0, WH_WIDTH, WH_HEIGHT, tempHdc, WH_WIDTH * xID, 0, SRCCOPY);
 		DeleteDC(tempHdc);
-		ReleaseDC(window, hdc);
+		EndPaint(window, &ps);
+		return 0;
 	}
-	break;
 	case WM_CLOSE:
 		DeleteObject(hBitMap);
-		DestroyWindow(help);
+		DestroyWindow(helpWin);
 		KillTimer(window, TID_INTRO);
-		help = NULL;
+		helpWin = NULL;
 		PostQuitMessage(0);
 		return 0;
 	}
 	return DefWindowProcW(window, message, commandID, action);
 }
-void CallbackMessage()
-{
-	MSG msg;
-	ZeroMemory(&msg, sizeof(msg));
-	if (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
-		DispatchMessageW(&msg);
-}
 /////////////////////////////////////////////////////////////////////////////////////
-void PrintBuferResult(struct StrData data, BOOL isGet)
+void LogMsg(const char* msg)
 {
-	if (!console)
+	if (!consoleWin)
+		return;
+	SetColor(SC_GREEN);
+	printf("Message:\t%s\n", msg);
+	SetColor(SC_WHITE);
+}
+void PrintBuferResult(struct StrData data, bool isGet)
+{
+	if (!consoleWin)
 		return;
 	if (isGet)
 	{
@@ -276,82 +275,67 @@ void PrintBuferResult(struct StrData data, BOOL isGet)
 		SetColor(SC_YELLOW);
 		printf("SetBufer:\t");
 	}
-	SetColor(SC_WHITE);
-	if (data.format == CF_UNICODETEXT)
-		wprintf(L"\"%s\"\n", data.str);
-	else
+	
+	switch (data.format)
 	{
-		SetColor(SC_BLUE);
-		printf("\"* PICTURE / КАРТИНКА *\"\n");
+	case CF_UNICODETEXT:
 		SetColor(SC_WHITE);
+		wprintf(L"\"%s\"\n", data.str);
+		break;
+	case CF_DIB:
+		SetColor(SC_SKY);
+		printf("* PICTURE / КАРТИНКА *\n");
+		SetColor(SC_WHITE);
+		break;
+	default:
+		SetColor(SC_NULL);
+		printf("|| NULL ||\n");
+		SetColor(SC_WHITE);
+		break;
 	}
 }
-struct StrData GetBufer()
+struct StrData GetBufer(void)
 {
 	struct StrData data = D_STRDATA;
-	while (!OpenClipboard(0)) {}
-	if (IsClipboardFormatAvailable(CF_UNICODETEXT))
-		data.format = CF_UNICODETEXT;
-	else if (IsClipboardFormatAvailable(CF_DIB))
-		data.format = CF_DIB;
-	else
+	while (!OpenClipboard(0))
+		Sleep(TS_PROCESSOR);
+	if (!IsClipboardFormatAvailable(data.format = CF_UNICODETEXT)
+		&& !IsClipboardFormatAvailable(data.format = CF_DIB))
 	{
 		CloseClipboard();
+		data.format = 0;
 		return data;
 	}
-	HANDLE hData;
-	hData = GetClipboardData(data.format);
-
-	wchar_t* bufer = (wchar_t*)GlobalLock(hData);
-	GlobalUnlock(hData);
+	wchar_t* clipData = (wchar_t*)GetClipboardData(data.format);
+	data.byteSize = (wcslen(clipData) + 1) * sizeof(wchar_t);
+	data.str = malloc(data.byteSize);
+	if (data.str)
+		memcpy(data.str, clipData, data.byteSize);
 	EmptyClipboard();
 	CloseClipboard();
-	data.size = GlobalSize(hData);
-	if (bufer != NULL)
-	{
-		data.str = (wchar_t*)malloc(data.size);
-		if (data.str != NULL)
-			memcpy(data.str, bufer, data.size);
-	}
 	return data;
 }
 void SetBufer(struct StrData* data)
 {
-	HANDLE globAll = NULL;
-	if (data->str != NULL)
+	while (!OpenClipboard(0))
+		Sleep(TS_PROCESSOR);
+	EmptyClipboard();
+	if (data->format)
 	{
-		globAll = GlobalAlloc(GMEM_DDESHARE, data->size);
-		if (globAll)
-		{
-			void* globLock = GlobalLock(globAll);
-			if (globLock)
-				memcpy(globLock, data->str, data->size);
-			GlobalUnlock(globAll);
-		}
-
-		while (!OpenClipboard(0)) {}
-		EmptyClipboard();
-		SetClipboardData(data->format, globAll);
-		CloseClipboard();
+		HANDLE clipData = GlobalAlloc(GMEM_FIXED, data->byteSize);
+		if (clipData)
+			memcpy(clipData, data->str, data->byteSize);
+		SetClipboardData(data->format, (HANDLE)clipData);
 		free(data->str);
 	}
-}
-void LogMsg(const char* msg)
-{
-	if (!console)
-		return;
-	SetColor(SC_GREEN);
-	printf("Message:\t%s\n", msg);
-	SetColor(SC_WHITE);
+	CloseClipboard();
 }
 /////////////////////////////////////////////////////////////////////////////////////
 wchar_t LUp(wchar_t letter)
 {
 	if ((letter >= L'a' && letter <= L'z')
 		|| (letter >= L'а' && letter <= L'я'))
-	{
-		letter += (L'A' - L'a');
-	}
+		letter -= CASE_DIFFERENCE;
 	if (letter == L'ё')
 		letter = L'Ё';
 	return letter;
@@ -360,162 +344,110 @@ wchar_t LDown(wchar_t letter)
 {
 	if ((letter >= L'A' && letter <= L'Z')
 		|| (letter >= L'А' && letter <= L'Я'))
-	{
-		letter += (L'a' - L'A');
-	}
+		letter += CASE_DIFFERENCE;
 	if (letter == L'Ё')
 		letter = L'ё';
 	return letter;
 }
-BOOL LIsItEngWord(wchar_t* str, struct LanguageLib lib)
+bool LIsCharInTheLine(const wchar_t* str, size_t byteSize, wchar_t wchar)
 {
-	int eng = 0;
-	int other = 0;
-
-	wchar_t letter;
-	BOOL needToSkip = FALSE;
-	for (int i = 0; i < wcslen(str); i++)
-	{
-		needToSkip = FALSE;
-		letter = LDown(str[i]);
-
-		for (int j = 0; j < lib.sizeSame; j++)
-			if (letter == lib.sameChars[j])
-			{
-				needToSkip = TRUE;
-				break;
-			}
-		if (needToSkip)
-			continue;
-
-		for (int j = 0; j < lib.sizeAll; j++)
-			if (letter == lib.otherChars[j])
-			{
-				other++;
-				needToSkip = TRUE;
-				break;
-			}
-		if (needToSkip)
-			continue;
-		eng++;
-	}
-	if (other > eng)
-		return FALSE;
-	return TRUE;
+	for (size_t i = 0; i < byteSize; i++)
+		if (str[i] == wchar)
+			return TRUE;
+	return FALSE;
 }
-wchar_t LSwap(wchar_t ch, BOOL eng, struct LanguageLib lib)
-{
-	//Смена между языками
-	if (eng)
-	{
-		for (int i = 0; i < lib.sizeAll; i++)
-			if (ch == lib.engChars[i])
-				return lib.otherChars[i];
-	}
-	else for (int i = 0; i < lib.sizeAll; i++)
-		if (ch == lib.otherChars[i])
-			return lib.engChars[i];
-	return ch;
-}
-void LChanger(wchar_t* str)
-{
-	struct LanguageLib RusLib = 
-	{ L"`~@#$^&qwertyuiop[{]}|asdfghjkl;:'\"zxcvbnm,<.>/?" ,
-	  L"ёЁ\"№;:?йцукенгшщзхХъЪ/фывапролджЖэЭячсмитьбБюЮ.,",
-	  L"1234567890!%*()-_=+\\", 49 , 21 };
-
-	BOOL isBig = FALSE;
-	BOOL isEng = FALSE;
-
-	size_t origLen = wcslen(str) + 1;
-	wchar_t* oneWord = NULL;
-	wchar_t* result = (wchar_t*)malloc(origLen * sizeof(wchar_t));
-	if (result == NULL)
-		return;
-
-	size_t counter = 0;
-	size_t wordLen = 0;
-	size_t lastID = 0;
-	for (int i = 0; i < origLen; i++)
-		if (str[i] == L' ' || str[i] == L'\t' || str[i] == L'\n' || str[i] == L'\0')
-		{
-			wordLen = i - lastID;
-			oneWord = (wchar_t*)malloc((wordLen + 1) * sizeof(wchar_t));
-			if (oneWord == NULL)
-				continue;
-			oneWord[wordLen] = L'\0';
-			for (int j = 0; j < wordLen; j++)
-				oneWord[j] = str[lastID + j];
-
-			////
-			isEng = LIsItEngWord(oneWord, RusLib);
-			for (int j = 0; j < wordLen; j++)
-			{
-				isBig = FALSE;
-				if (oneWord[j] != LDown(oneWord[j]))
-					isBig = TRUE;
-				oneWord[j] = LSwap(LDown(oneWord[j]), isEng, RusLib);
-				if (isBig)
-					oneWord[j] = LUp(oneWord[j]);
-			};
-
-			////
-			for (int j = 0; j < wordLen; j++)
-				result[lastID + j] = oneWord[j];
-			result[i] = str[i];
-			lastID = (size_t)i + 1;
-		}
-	for (int i = 0; i < origLen - 1; i++)
-		str[i] = result[i];
-	free(oneWord);
-	free(result);
-}
-void LSizer(wchar_t* str)
-{
-	for (int i = 0; i < wcslen(str); i++)
-		if (str[i] == LUp(str[i]))
-			str[i] = LDown(str[i]);
-		else str[i] = LUp(str[i]);
-}
-void LogicSwitch(struct StrData* selected, int switcher)
+void LogicSwitch(struct StrData* opt, int switcher)
 {
 	switch (switcher)
 	{
-	case LS_SWAP:
-		LChanger(selected->str);
+	case LID_SWAP:
+	{
+		const wchar_t* engChars = L"`~@#$^&qQwWeErRtTyYuUiIoOpP[{]}|aAsSdDfFgGhHjJkKlL;:'\"zZxXcCvVbBnNmM,<.>/?";
+		const wchar_t* rusChars = L"ёЁ\"№;:?йЙцЦуУкКеЕнНгГшШщЩзЗхХъЪ/фФыЫвВаАпПрРоОлЛдДжЖэЭяЯчЧсСмМиИтТьЬбБюЮ.,";
+		const wchar_t* sameChars = L"1234567890!%*()-_=+\\\";:?.,/";
+		size_t swapCharsSize = wcslen(engChars);
+		size_t sameCharsSize = wcslen(sameChars);
+		size_t strSize = wcslen(opt->str) + 1;
+		unsigned engCount;
+		unsigned rusCount;
+		wchar_t* oneWord;
+		size_t wordLen;
+		size_t lastID = 0;
+		for (size_t i = 0; i < strSize; i++)
+			if (opt->str[i] == L' ' || opt->str[i] == L'\t' || opt->str[i] == L'\n' || opt->str[i] == L'\0')
+			{
+				wordLen = (size_t)i - lastID;
+				oneWord = opt->str + lastID;
+				engCount = 0;
+				rusCount = 0;
+				for (size_t j = 0; j < wordLen; j++)
+				{
+					if (LIsCharInTheLine(sameChars, sameCharsSize, oneWord[j]))
+						continue;
+					if (LIsCharInTheLine(engChars, swapCharsSize, oneWord[j]))
+						engCount++;
+					else rusCount++;
+				}
+				if (engCount >= rusCount)
+				{
+					for (size_t j = 0; j < wordLen; j++)
+						for (size_t k = 0; k < swapCharsSize; k++)
+							if (engChars[k] == oneWord[j])
+							{
+								oneWord[j] = rusChars[k];
+								break;
+							}
+				}
+				else
+					for (size_t j = 0; j < wordLen; j++)
+						for (size_t k = 0; k < swapCharsSize; k++)
+							if (rusChars[k] == oneWord[j])
+							{
+								oneWord[j] = engChars[k];
+								break;
+							}
+				lastID = i + 1;
+			}
 		LogMsg("Смена языка выполнена");
+	}
 		break;
-	case LS_UPDOWN:
-		LSizer(selected->str);
+	case LID_UPDOWN:
+	{
+		wchar_t upChar;
+		size_t strSize = wcslen(opt->str);
+		for (size_t i = 0; i < strSize; i++)
+		{
+			upChar = LUp(opt->str[i]);
+			opt->str[i] = opt->str[i] == upChar ? LDown(opt->str[i]) : upChar;
+		}
 		LogMsg("Смена регистра выполнена");
+	}
 		break;
 	default:
 		return;
 	}
 }
 /////////////////////////////////////////////////////////////////////////////////////
-int IsKeysPressed(const struct keysComb* comb)
-{
-	for (unsigned int i = 0; i < comb->len; i++)
-		if (GetAsyncKeyState(comb->names[i]) >= 0) 
-			return 0;
-	return comb->ID;
-}
 void EmulateACombinationWithCtrl(wchar_t key)
 {
 	INPUT input[4];
 	ZeroMemory(input, sizeof(input));
-	for (int i = 0; i < 4; i++)
-	{
+	input[0].ki.wVk = VK_CONTROL;
+	input[1].ki.wVk = key;
+	input[1].ki.time = TS_PROCESSOR;
+	input[2].ki.wVk = key;
+	input[2].ki.dwFlags = KEYEVENTF_KEYUP;
+	input[3].ki.wVk = VK_CONTROL;
+	input[3].ki.dwFlags = KEYEVENTF_KEYUP;
+	input[3].ki.time = TS_PROCESSOR;
+	for (unsigned i = 0; i < 4; i++)
 		input[i].type = INPUT_KEYBOARD;
-		input[i].ki.wVk = (i % 2) ? key : VK_CONTROL;
-		if (i >= 2)
-			input[i].ki.dwFlags = KEYEVENTF_KEYUP;
-	}
-	SendInput(4, input, sizeof(INPUT));
+	UINT result = SendInput(4, input, sizeof(INPUT));
+	if (result != 4)
+		LogMsg("Emulate ERROR");
 }
 /////////////////////////////////////////////////////////////////////////////////////
-BOOL IsNewVersionExist()
+bool IsNewVersionExist(void)
 {
 	HINTERNET hInterOpen = InternetOpenA("fmt", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	if (!hInterOpen)
@@ -533,7 +465,7 @@ BOOL IsNewVersionExist()
 	InternetReadFile(hInterconnect, str, dataSize, &dataSize);
 	InternetCloseHandle(hInterconnect);
 	InternetCloseHandle(hInterOpen);
-	BOOL result = FALSE;
+	bool result = FALSE;
 	int verSize = 0;
 	while (str[VERSIONID + verSize] != '\"')
 		verSize++;
@@ -561,14 +493,15 @@ int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char
 		return 1;
 
 	////	Поиск, создание и регестрация окна, проверки, и т.п.
+	histance = GetModuleHandleW(NULL);
 	NOTIFYICONDATA icon;
 	ZeroMemory(&icon, sizeof(icon));
 	{
 		////	Регистрация класса (штука, чтобы "CALLBACK IconReaction" вызывалась)
-		WNDCLASS wc;
+		WNDCLASS wc;	
 		ZeroMemory(&wc, sizeof(wc));
 		wc.lpfnWndProc = IconReaction;
-		wc.hInstance = GetModuleHandleW(NULL);
+		wc.hInstance = histance;
 		wc.lpszClassName = WCN_ICON;
 		RegisterClassW(&wc);
 
@@ -579,123 +512,118 @@ int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char
 		icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
 		icon.uCallbackMessage = WM_USER;
 		//IDI_ICON1 - ID Иконки из файла ресурсов.
-		icon.hIcon = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_ICON1));
+		icon.hIcon = LoadIconW(histance, MAKEINTRESOURCEW(IDI_ICON1));
 		const wchar_t* tip = L"Fix my text";
 		wcscpy_s(icon.szTip, wcslen(tip) + 1, tip);
-
 
 		////	Регистрация класса (штука, чтобы "CALLBACK HelpReaction" вызывалась)
 		WNDCLASS wc2;
 		ZeroMemory(&wc2, sizeof(wc2));
 		wc2.lpfnWndProc = HelpReaction;
-		wc2.hInstance = GetModuleHandleW(NULL);
+		wc2.hInstance = histance;
 		wc2.lpszClassName = WCN_HELP;
 		wc2.hbrBackground = CreateSolidBrush(RGB(34, 30, 26));
+		wc2.hIcon = LoadIconW(histance, MAKEINTRESOURCEW(IDI_ICON1));
 		RegisterClassW(&wc2);
 	}
 	Shell_NotifyIconW(NIM_ADD, &icon);
+
 	////	Список ключей клавиатуры:
 	//https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
 	////	ВСЕ ПЕРЕМЕННЫЕ 
-	int toSWAP_M[] = { VK_LWIN, VK_LCONTROL };
-	int toUPDOWN_M[] = { VK_LWIN, VK_LMENU };
-	struct keysComb toSWAP = { 2, toSWAP_M, LS_SWAP };
-	struct keysComb toUPDOWN = { 2,	toUPDOWN_M, LS_UPDOWN };
-
-	struct StrData conservation = D_STRDATA;
-	struct StrData selected = D_STRDATA;
-	int switcher = 0;
+	struct StrData conservation = D_STRDATA, selected = D_STRDATA;
+	unsigned switcher = 0;
 
 	//Провкерка новой версии
 	isNewVersion = IsNewVersionExist();
-	unsigned long long ggg = 0;
+
 	////	ЦАРЬ БАТЮШКА ЦИКЛ
+	MSG msg;
+	ZeroMemory(&msg, sizeof(msg));
 	while (!isExit)
-	{
-		//printf("%lld\n", ggg++);
-		if ((switcher = IsKeysPressed(&toSWAP)) || (switcher = IsKeysPressed(&toUPDOWN)))
+		if (GetMessageW(&msg, NULL, 0, 0))
 		{
-			if (console)
-				printf("-----------------------------------------------\n");
-
-			////	GET CONSERVATION;
-			conservation = GetBufer();
-			PrintBuferResult(conservation, TRUE);
-
-			////	LOGIC (CTRL+C / GET / *DO STAF* / SET / CTRL+V);
-			selected.str = NULL;
-
-			//Проблемные кнопки, мешающие копированию
-			while (GetAsyncKeyState(VK_LWIN) < 0 || GetAsyncKeyState(VK_RWIN) < 0
-				|| GetAsyncKeyState(VK_MENU) < 0)
+			DispatchMessageW(&msg);
+			if (msg.message == WM_HOTKEY)
 			{
-				CallbackMessage();
-				Sleep(TS_PROCESSOR);
-			}
+				switcher = (unsigned)msg.wParam;
+				if (consoleWin)
+					printf("-----------------------------------------------\n");
 
-			//Проверка на то что это не консоль (в консоли ctrl+c = смерть)
-			if (console && GetForegroundWindow() == console)
-			{
-				LogMsg("Предотвращение ошибки. Не используйте FMT внутри консоли!");
-				SetBufer(&conservation);
-				continue;
-			}
+				////	GET CONSERVATION;
+				PrintBuferResult(conservation = GetBufer(), TRUE);
 
-			//Эмуляция Ctrl+C
-			EmulateACombinationWithCtrl('C');
-			for (unsigned i = 0; i < TS_NORMAL; i++)
-			{
-				if ((selected = GetBufer()).str)
+				////	LOGIC (CTRL+C / GET / *DO STAF* / SET / CTRL+V);
+				selected.str = NULL;
+
+				////Проблемные кнопки, мешающие копированию
+				while (isProblemKeys)
+					if (GetMessageW(&msg, NULL, 0, 0))
+						DispatchMessageW(&msg);
+
+				//Эмуляция Ctrl+C
+				EmulateACombinationWithCtrl('C');
+				for (unsigned i = 0; i < TS_NORMAL; i++)
+				{
+					if ((selected = GetBufer()).str)
+					{
+						PrintBuferResult(selected, TRUE);
+						break;
+					}
+					Sleep(TS_PROCESSOR);
+				}
+				//Скипаем логику если ничего не выделенно
+				if (!selected.str)
 				{
 					PrintBuferResult(selected, TRUE);
-					break;
+					LogMsg("Ничего не выделенно");
+					PrintBuferResult(conservation, FALSE);
+					SetBufer(&conservation);
+					continue;
 				}
-				Sleep(TS_PROCESSOR);
-			}
-			//Скипаем логику если ничего не выделенно
-			if (!selected.str)
-			{
-				PrintBuferResult(selected, TRUE);
-				LogMsg("Ничего не выделенно");
+				if (selected.format == CF_DIB)
+				{
+					LogMsg("Пропуск картинки");
+					PrintBuferResult(conservation, FALSE);
+					SetBufer(&conservation);
+					continue;
+				}
+
+				//Самая главная функция
+				LogicSwitch(&selected, switcher);														   //<<<===
+				PrintBuferResult(selected, FALSE);
+				SetBufer(&selected);
+
+				//Эмуляция Ctrl+V
+				EmulateACombinationWithCtrl('V');
+				Sleep(TS_SLOW_APP);
+
+				while (!GetOpenClipboardWindow()) {}
+				while (GetOpenClipboardWindow()) { Sleep(TS_PROCESSOR); }
+				//for (; ;)
+				//	if (GetOpenClipboardWindow())
+				//	{
+				//		printf("gandon\n");
+				//		break;
+				//	}
+						
+
+				////	SET CONSERVATION;
 				PrintBuferResult(conservation, FALSE);
 				SetBufer(&conservation);
-				continue;
+		
+				//Смена языка (при включеной галочки)
+				if (isChangeLang && switcher == LID_SWAP)
+					PostMessageW(GetForegroundWindow(), WM_INPUTLANGCHANGEREQUEST, 0, 0);
 			}
-			if (selected.format == CF_DIB)
-			{
-				LogMsg("Пропуск картинки");
-				PrintBuferResult(conservation, FALSE);
-				SetBufer(&conservation);
-				continue;
-			}
-
-			//Самая главная функция
-			LogicSwitch(&selected, switcher);														   //<<<===
-			PrintBuferResult(selected, FALSE);
-			SetBufer(&selected);
-			
-			//Эмуляция Ctrl+V
-			EmulateACombinationWithCtrl('V');
-			Sleep(TS_SLOW_APP);
-	
-			////	SET CONSERVATION;
-			PrintBuferResult(conservation, FALSE);
-			SetBufer(&conservation);
-
-			//Смена языка (при включеной галочки)
-			if (isChangeLang && switcher == LS_SWAP)
-				PostMessageW(GetForegroundWindow(), WM_INPUTLANGCHANGEREQUEST, 0, 0);
 		}
-		CallbackMessage();
-		Sleep(TS_PROCESSOR);
-	}
 	//Dectructor
 	DestroyWindow(icon.hWnd);
 	Shell_NotifyIconW(NIM_DELETE, &icon);
-	UnregisterClassW(WCN_ICON, GetModuleHandleW(NULL));
-	UnregisterClassW(WCN_HELP, GetModuleHandleW(NULL));
-	if (console)
+	UnregisterClassW(WCN_ICON, histance);
+	UnregisterClassW(WCN_HELP, histance);
+	if (consoleWin)
 		FreeConsole();
 	ReleaseMutex(hMutex);
 	return 0;
