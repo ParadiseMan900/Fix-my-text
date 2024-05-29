@@ -1,12 +1,11 @@
+######################################################################################
 
+    FFFFFFF IIIII XX    XX    MM    MM YY   YY    TTTTTTT EEEEEEE XX    XX TTTTTTT    
+    FF       III   XX  XX     MMM  MMM YY   YY      TTT   EE       XX  XX    TTT   
+    FFFF     III    XXXX      MM MM MM  YYYYY       TTT   EEEEE     XXXX     TTT   
+    FF       III   XX  XX     MM    MM   YYY        TTT   EE       XX  XX    TTT   
+    FF      IIIII XX    XX    MM    MM   YYY        TTT   EEEEEEE XX    XX   TTT        
 
-	* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
-	*     ____  __  _  _    _  _  _  _    ____  ____  _  _  ____    _  _   ___      *
-	*    (  __)(  )( \/ )  ( \/ )( \/ )  (_  _)(  __)( \/ )(_  _)  / )( \ / __)     *
-	*     ) _)  )(  )  (   / \/ \ )  /     )(   ) _)  )  (   )(    \ \/ /(___ \     *
-	*    (__)  (__)(_/\_)  \_)(_/(__/     (__) (____)(_/\_) (__)    \__/ (____/     *
-	*                               		                                *
-	* * * * * * * * * * * * * * * * * * * * * * * * * * by Teslev Dmitry Sergeevich *
-	                                  		  *                        2024 *
-							  * * * * * * * * * * * * * * * *
-Debug log:
+######################################################################################
+
+[Debug log]:
