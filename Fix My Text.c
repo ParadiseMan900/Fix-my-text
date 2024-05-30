@@ -9,7 +9,7 @@
 #define VAR_NAME(name)			#name
 
 //FMT Version data
-#define	VERSION					"v6.0"
+#define	VERSION					"v6.1"
 #define VERSIONID				10U
 //Icon Reaction IDs
 #define IR_HELP					0U
@@ -32,7 +32,7 @@
 #define TS_PROCESSOR			10U
 #define TS_SLOW_APP				250U
 //Default struct data
-#define D_STRDATA				{NULL, 0, 0}
+#define D_STRDATA				{NULL, 0, 0, 0}
 //Сonstant case difference
 #define CASE_DIFFERENCE			32U
 //Window Class Name
@@ -77,7 +77,8 @@ union BoolSettings _fmtSet = { 0, .isChangeLang = TRUE };
 struct StrData
 {
 	wchar_t* str;
-	size_t	size;
+	size_t	byteSize;
+	size_t	strSize;
 	unsigned format;
 };
 /////////////////////////////////////////////////////////////////////////////////////
@@ -283,8 +284,8 @@ LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARA
 	case WM_CLOSE:
 		DeleteObject(hBitMap);
 		DestroyWindow(_helpWin);
-		KillTimer(window, TID_INTRO);
 		_helpWin = NULL;
+		KillTimer(window, TID_INTRO);
 		PostQuitMessage(0);
 		return 0;
 	}
@@ -304,7 +305,7 @@ void PrintStrData(struct StrData* data, const char* msg)
 	if (!_consoleWin)
 		return;
 	SetColor(SC_RED);
-	printf("%s[%llu] -> ", msg, data->size);
+	printf("%s[%llu] -> ", msg, data->strSize);
 	switch (data->format)
 	{
 	case CF_UNICODETEXT:
@@ -337,10 +338,12 @@ struct StrData GetBufer(void)
 		return data;
 	}
 	wchar_t* clipData = (wchar_t*)GetClipboardData(data.format);
-	data.size = wcslen(clipData) + 1;
-	data.str = malloc(data.size * sizeof(wchar_t));
+	if (data.format == CF_UNICODETEXT)
+		data.strSize = wcslen(clipData) + 1;
+	data.byteSize = GlobalSize(clipData);
+	data.str = malloc(data.byteSize);
 	if (data.str)
-		memcpy(data.str, clipData, data.size * sizeof(wchar_t));
+		memcpy(data.str, clipData, data.byteSize);
 	EmptyClipboard();
 	CloseClipboard();
 	return data;
@@ -352,13 +355,14 @@ void SetBufer(struct StrData* data)
 	EmptyClipboard();
 	if (data->format)
 	{
-		HANDLE clipData = GlobalAlloc(GMEM_FIXED, data->size * sizeof(wchar_t));
+		HANDLE clipData = GlobalAlloc(GMEM_FIXED, data->byteSize);
 		if (clipData)
-			memcpy(clipData, data->str, data->size * sizeof(wchar_t));
-		SetClipboardData(data->format, (HANDLE)clipData);
+			memcpy(clipData, data->str, data->byteSize);
+		SetClipboardData(data->format, clipData);
 		free(data->str);
 		data->str = NULL;
-		data->size = 0;
+		data->strSize = 0;
+		data->byteSize = 0;
 	}
 	CloseClipboard();
 	LogMsg("Call SetBufer", SC_YELLOW);
@@ -405,7 +409,7 @@ void LogicSwitch(struct StrData* opt, int switcher)
 		wchar_t* oneWord;
 		size_t wordLen;
 		size_t lastID = 0;
-		for (size_t i = 0; i < opt->size; i++)
+		for (size_t i = 0; i < opt->strSize; i++)
 			if (opt->str[i] == L' ' || opt->str[i] == L'\t' || opt->str[i] == L'\n' || opt->str[i] == L'\0')
 			{
 				wordLen = (size_t)i - lastID;
@@ -446,7 +450,7 @@ void LogicSwitch(struct StrData* opt, int switcher)
 	case LID_UPDOWN:
 	{
 		wchar_t upChar;
-		for (size_t i = 0; i < opt->size - 1; i++)
+		for (size_t i = 0; i < opt->strSize - 1; i++)
 		{
 			upChar = LUp(opt->str[i]);
 			opt->str[i] = opt->str[i] == upChar ? LDown(opt->str[i]) : upChar;
