@@ -4,12 +4,15 @@
 #include <locale.h>
 #include <stdio.h>
 #include <wininet.h>
-#pragma comment(lib, "WinInet.lib") 
+#pragma comment(lib, "WinInet.lib")
+#pragma comment(lib, "winmm.lib")
 #pragma warning( disable : 4554 ) // Я знаю как работают >> и <<
 #define VAR_NAME(name)			#name
 
+typedef unsigned char			bool;
+
 //FMT Version data
-#define	VERSION					"v6.1"
+#define	VERSION					"v6.2"
 #define VERSIONID				10U
 //Icon Reaction IDs
 #define IR_HELP					0U
@@ -28,9 +31,6 @@
 #define SC_WHITE				FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE
 #define SC_NULL					SC_WHITE | BACKGROUND_RED
 #define SetColor(colID)			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), colID | FOREGROUND_INTENSITY)
-//Time Sleep IDs
-#define TS_PROCESSOR			10U
-#define TS_SLOW_APP				250U
 //Default struct data
 #define D_STRDATA				{NULL, 0, 0, 0}
 //Сonstant case difference
@@ -44,20 +44,18 @@
 //Window Inaccuracy
 #define WI_WIDTH				16U
 #define WI_HEIGHT				39U
-//Animation Settings
-#define ANIM_SIZE				60U
-#define ANIM_INTERVAL			5U
 //Timer Settings
 #define TID_PROBLEM				1U
 #define TID_CTRLC				2U
 #define TID_CTRLV				3U
-#define TID_INTRO				4U
-
-typedef unsigned char			bool;
+//Animation Settings
+#define ANIM_SIZE				60U
+#define ANIM_INTERVAL			16U		//Время анимации - 1 сек в 60 кадров. 1000/60 +-= 16
 
 HWND _consoleWin =				NULL;
 HWND _helpWin =					NULL;
 HMODULE _histance =				NULL;
+unsigned frameID =				0;
 
 union BoolSettings
 {
@@ -73,13 +71,13 @@ union BoolSettings
 		bool isWaitingInput		:	1;
 	};
 };
-union BoolSettings _fmtSet = { 0, .isChangeLang = TRUE };
+union BoolSettings _fmtSet =	{ 0, .isChangeLang = TRUE };
 struct StrData
 {
 	wchar_t* str;
-	size_t	byteSize;
-	size_t	strSize;
-	unsigned format;
+	size_t byteSize;
+	size_t strSize;
+	unsigned short format;
 };
 /////////////////////////////////////////////////////////////////////////////////////
 const char* LoadAndWriteTXT(int nameID)
@@ -250,25 +248,28 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARA
 	}
 	return DefWindowProcW(window, message, commandID, action);
 }
+void CALLBACK TimerCallback(UINT uTimerID, UINT uMsg, DWORD_PTR dwUser, DWORD_PTR dw1, DWORD_PTR dw2)
+{
+	if (frameID != ANIM_SIZE - 1)
+	{
+		frameID++;
+		InvalidateRect(_helpWin, NULL, TRUE);
+		UpdateWindow(_helpWin);
+	}
+	else timeKillEvent(uTimerID);
+}
 LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARAM action)
 {
 	static HBITMAP hBitMap = NULL;
-	static unsigned frameID;
+	
+	static MMRESULT animTimer = 0;
 	switch (message)
 	{
 	case WM_CREATE:
 		frameID = 0;
 		hBitMap = (HBITMAP)LoadImageW(_histance,
 			MAKEINTRESOURCEW(IDB_BITMAP5), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
-		SetTimer(window, TID_INTRO, ANIM_INTERVAL, NULL);
-		return 0;
-	case WM_TIMER:
-		if (frameID != ANIM_SIZE - 1)
-		{
-			frameID++;
-			InvalidateRect(window, NULL, TRUE);
-		}
-		else KillTimer(window, TID_INTRO);
+		animTimer = timeSetEvent(ANIM_INTERVAL, 0, TimerCallback, 0, TIME_PERIODIC | TIME_KILL_SYNCHRONOUS);
 		return 0;
 	case WM_PAINT:
 	{
@@ -285,7 +286,8 @@ LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARA
 		DeleteObject(hBitMap);
 		DestroyWindow(_helpWin);
 		_helpWin = NULL;
-		KillTimer(window, TID_INTRO);
+		if(frameID != ANIM_SIZE - 1)
+			timeKillEvent(animTimer);
 		PostQuitMessage(0);
 		return 0;
 	}
@@ -328,7 +330,7 @@ struct StrData GetBufer(void)
 {
 	struct StrData data = D_STRDATA;
 	while (!OpenClipboard(0))
-		Sleep(TS_PROCESSOR);
+		Sleep(USER_TIMER_MINIMUM);
 	LogMsg("Call GetBufer", SC_YELLOW);
 	if (!IsClipboardFormatAvailable(data.format = CF_UNICODETEXT)
 		&& !IsClipboardFormatAvailable(data.format = CF_DIB))
@@ -351,7 +353,7 @@ struct StrData GetBufer(void)
 void SetBufer(struct StrData* data)
 {
 	while (!OpenClipboard(0))
-		Sleep(TS_PROCESSOR);
+		Sleep(USER_TIMER_MINIMUM);
 	EmptyClipboard();
 	if (data->format)
 	{
@@ -488,7 +490,7 @@ bool IsNewVersionExist(void)
 		"https://api.github.com/repos/ParadiseMan900/Fix-my-text/tags", NULL, 0, 0, 0);
 	if (!hInterconnect)
 		return FALSE;
-	DWORD dataSize;
+	size_t dataSize;
 	InternetQueryDataAvailable(hInterconnect, &dataSize, 0, 0);
 	char* str = (char*)malloc(sizeof(char) * (dataSize + 1));
 	if(!str)
@@ -498,14 +500,14 @@ bool IsNewVersionExist(void)
 	InternetCloseHandle(hInterconnect);
 	InternetCloseHandle(hInterOpen);
 	bool result = FALSE;
-	int verSize = 0;
+	unsigned verSize = 0;
 	while (str[VERSIONID + verSize] != '\"')
 		verSize++;
 	char* version = (char*)malloc(sizeof(char) * (verSize + 1));
 	if (version)
 	{
 		version[verSize] = '\0';
-		for (int i = 0; i < verSize; i++)
+		for (unsigned i = 0; i < verSize; i++)
 			version[i] = str[VERSIONID + i];
 		if (strcmp(version, VERSION))
 			result = TRUE;
@@ -554,7 +556,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char
 		wc2.lpfnWndProc = HelpReaction;
 		wc2.hInstance = _histance;
 		wc2.lpszClassName = WCN_HELP;
-		wc2.hbrBackground = CreateSolidBrush(RGB(34, 30, 26));
+		wc2.hbrBackground = NULL;
 		wc2.hIcon = LoadIconW(_histance, MAKEINTRESOURCEW(IDI_ICON1));
 		RegisterClassW(&wc2);
 	}
@@ -585,7 +587,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char
 				PrintStrData(&conservation, VAR_NAME(conservation));
 
 				////	Проблемные кнопки, мешающие копированию
-				SetTimer(icon.hWnd, TID_PROBLEM, TS_PROCESSOR, NULL);
+				SetTimer(icon.hWnd, TID_PROBLEM, USER_TIMER_MINIMUM, NULL);
 				_fmtSet.isProblemKeys = TRUE;
 				while (_fmtSet.isProblemKeys)
 					if (GetMessageW(&msg, NULL, 0, 0))
@@ -594,7 +596,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char
 
 				////	Эмуляция Ctrl+C
 				AddClipboardFormatListener(icon.hWnd);
-				SetTimer(icon.hWnd, TID_CTRLC, TS_PROCESSOR, NULL);
+				SetTimer(icon.hWnd, TID_CTRLC, USER_TIMER_MINIMUM, NULL);
 				_fmtSet.isWaitingClipboard = TRUE;
 				EmulateACombinationWithCtrl('C');
 				while (_fmtSet.isWaitingClipboard)
@@ -630,7 +632,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char
 				EmulateACombinationWithCtrl('V');
 
 				////	Ожидания действий для корректной вставки CONSERVATION
-				SetTimer(icon.hWnd, TID_CTRLV, TS_PROCESSOR, NULL);
+				SetTimer(icon.hWnd, TID_CTRLV, USER_TIMER_MINIMUM, NULL);
 				_fmtSet.isWaitingInput = TRUE;
 				while (_fmtSet.isWaitingInput)
 					if (GetMessageW(&msg, NULL, 0, 0))
