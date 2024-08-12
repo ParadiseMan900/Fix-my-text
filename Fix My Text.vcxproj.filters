@@ -48,6 +48,15 @@
     <Image Include="AID_HELP.bmp">
       <Filter>Файлы ресурсов</Filter>
     </Image>
+    <Image Include="FMT+.ico">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="Google.bmp">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="Yandex.bmp">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Text Include="FMT_Consol.txt" />
