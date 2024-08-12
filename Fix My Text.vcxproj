@@ -163,11 +163,14 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="AID_HELP.bmp" />
+    <Image Include="FMT+.ico" />
+    <Image Include="Google.bmp" />
     <Image Include="REVERS.bmp" />
     <Image Include="FMT.ico" />
     <Image Include="KONSOL.bmp" />
     <Image Include="KREST.bmp" />
     <Image Include="PALKA.bmp" />
+    <Image Include="Yandex.bmp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="FMT_Consol.txt" />

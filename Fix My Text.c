@@ -9,20 +9,21 @@
 #pragma warning( disable : 4554 ) // Я знаю как работают >> и <<
 #define VAR_NAME(name)			#name
 
-typedef unsigned char			bool;
-
 //FMT Version data
-#define	VERSION					"v6.2"
+#define	VERSION					"v6.3"
 #define VERSIONID				10U
 //Icon Reaction IDs
-#define IR_HELP					0U
-#define IR_HIDESHOW				1U
-#define IR_SYSSWITCH			2U
-#define IR_EXIT					3U
-#define IR_NEWVER				4U
+#define IR_HELP					1U
+#define IR_HIDESHOW				2U
+#define IR_SYSSWITCH			3U
+#define IR_EXIT					4U
+#define IR_NEWVER				5U
+#define IR_WEB_GOOGLE			6U
+#define IR_WEB_YANDEX			7U
 //Logic Switch IDs
 #define LID_SWAP				1U
 #define LID_UPDOWN				2U
+#define LID_TOWEB				3U
 //Set Color IDs
 #define SC_GREEN				FOREGROUND_GREEN
 #define SC_SKY					FOREGROUND_BLUE | FOREGROUND_GREEN
@@ -30,9 +31,8 @@ typedef unsigned char			bool;
 #define SC_YELLOW				FOREGROUND_GREEN | FOREGROUND_RED
 #define SC_WHITE				FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE
 #define SC_NULL					SC_WHITE | BACKGROUND_RED
-#define SetColor(colID)			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), colID | FOREGROUND_INTENSITY)
-//Default struct data
-#define D_STRDATA				{NULL, 0, 0, 0}
+#define SetColor(colID)			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), \
+									colID | FOREGROUND_INTENSITY)
 //Сonstant case difference
 #define CASE_DIFFERENCE			32U
 //Window Class Name
@@ -48,52 +48,97 @@ typedef unsigned char			bool;
 #define TID_PROBLEM				1U
 #define TID_CTRLC				2U
 #define TID_CTRLV				3U
+#define TID_NEWVER				4U
 //Animation Settings
-#define ANIM_SIZE				60U
-#define ANIM_INTERVAL			16U		//Время анимации - 1 сек в 60 кадров. 1000/60 +-= 16
+#define ANIM_SIZE				60U		//60 кадров
+#define ANIM_INTERVAL			16U		//Время анимации - 1 сек в 60 кадров. 1000/60 = 16
+//New version website
+#define GOTO_GITHUB				"start https://github.com/ParadiseMan900/Fix-my-text/releases/latest"
+//Settings name
+#define SET_FILE				"FMT_Settings.txt"
 
-HWND _consoleWin =				NULL;
-HWND _helpWin =					NULL;
-HMODULE _histance =				NULL;
-unsigned frameID =				0;
+typedef unsigned char			bool;
 
 union BoolSettings
 {
 	bool memSell;
 	struct
 	{
-		bool isExit				:	1;
-		bool isVisible			:	1;
-		bool isChangeLang		:	1;
-		bool isNewVersion		:	1;
-		bool isProblemKeys		:	1;
-		bool isWaitingClipboard :	1;
-		bool isWaitingInput		:	1;
+		bool isVisible : 1;
+		bool isChangeLang : 1;
+		bool isNewVersion : 1;
+		bool isProblemKeys : 1;
+		bool isWaitingClipboard : 1;
+		bool isWaitingInput : 1;
+		bool isDebugMode : 1;
+		bool isGoogle : 1;
 	};
 };
-union BoolSettings _fmtSet =	{ 0, .isChangeLang = TRUE };
 struct StrData
 {
 	wchar_t* str;
 	size_t byteSize;
 	size_t strSize;
-	unsigned short format;
+	USHORT format;
 };
+
+HWND helpWin =					NULL;
+HWND consoleWin =				NULL;
+HMODULE histance =				NULL;
+unsigned frameID =				0U;
+union BoolSettings settings =	{ 0, .isChangeLang = TRUE };
+NOTIFYICONDATAW nTray;
+
+
 /////////////////////////////////////////////////////////////////////////////////////
+bool IsNewVersionExist(void)
+{
+	HINTERNET hInterOpen = InternetOpenW(L"fmt", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+	if (!hInterOpen)
+		return FALSE;
+	HINTERNET hInterconnect = InternetOpenUrlW(hInterOpen,
+		L"https://api.github.com/repos/ParadiseMan900/Fix-my-text/tags", NULL, 0, 0, 0);
+	if (!hInterconnect)
+		return FALSE;
+	DWORD dataSize = 0;
+	InternetQueryDataAvailable(hInterconnect, &dataSize, 0, 0);
+	char* str = calloc((size_t)dataSize + 1, sizeof(char));
+	if (!str)
+		return FALSE;
+	InternetReadFile(hInterconnect, str, dataSize, &dataSize);
+	InternetCloseHandle(hInterconnect);
+	InternetCloseHandle(hInterOpen);
+	bool result = FALSE;
+	size_t verSize = 0;
+	while (str[VERSIONID + verSize] != '\"')
+		verSize++;
+	char* version = calloc(verSize + 1, sizeof(char));
+	if (version)
+	{
+		for (size_t i = 0; i != verSize; i++)
+			version[i] = str[VERSIONID + i];
+		if (strcmp(version, VERSION))
+		{
+			result = TRUE;
+			Shell_NotifyIconW(NIM_MODIFY, &nTray);
+		}
+
+		free(version);
+	}
+	free(str);
+	return result;
+}
 const char* LoadAndWriteTXT(int nameID)
 {
-	const char* data = "";
-	HINSTANCE handle = _histance;
-
+	const char* data = 0;
 	//Ссылка на ресурс
-	HRSRC rcNameID = FindResourceW(handle, MAKEINTRESOURCEW(nameID),
-		MAKEINTRESOURCEW(TEXTFILE));
+	HRSRC rcNameID = FindResourceW(histance, MAKEINTRESOURCEW(nameID), MAKEINTRESOURCEW(TEXTFILE));
 	if (rcNameID)
 	{
 		//Данные в TXT (Все)
-		HANDLE rcData = LoadResource(handle, rcNameID);
+		HANDLE rcData = LoadResource(histance, rcNameID);
 		if (rcData)
-			data = (const char*)LockResource(rcData);
+			data = LockResource(rcData);
 	}
 	return data;
 }
@@ -120,10 +165,22 @@ void AddDebugConsole(void)
 	FILE* safeTemp;
 	freopen_s(&safeTemp, "CON", "w", stdout);
 	SetConsoleTitleW(L"Fix My Text - Debug mode");
-	_consoleWin = FindMainWindow();
+	consoleWin = FindMainWindow();
 	SetConsoleOutputCP(1251);
 	setlocale(LC_ALL, "");
 	SetConsoleCtrlHandler(0, TRUE);
+	HMENU hMenu = GetSystemMenu(consoleWin, FALSE);
+	if (hMenu) 
+		DeleteMenu(hMenu, SC_CLOSE, MF_BYCOMMAND);
+}
+HWND CreateClientWindow(WCHAR* lpClassName, WCHAR* lpWindowName, DWORD dwStyle, int X, int Y,
+	int nWidth, int nHeight, HINSTANCE hInstance)
+{
+	RECT rect = { X, Y, nWidth + X, nHeight + Y };
+	AdjustWindowRect(&rect, dwStyle, FALSE);
+	HWND resultHWND = CreateWindowW(lpClassName, lpWindowName, dwStyle, rect.left, rect.top,
+		rect.right - rect.left, rect.bottom - rect.top, NULL, NULL, hInstance, NULL);
+	return resultHWND;
 }
 LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARAM action)
 {
@@ -132,6 +189,7 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARA
 	case WM_CREATE:
 		RegisterHotKey(window, LID_SWAP, MOD_CONTROL | MOD_WIN, 0);
 		RegisterHotKey(window, LID_UPDOWN, MOD_ALT | MOD_WIN, 0);
+		RegisterHotKey(window, LID_TOWEB, MOD_CONTROL | MOD_ALT, 0);
 		break;
 	case WM_TIMER:
 		switch (commandID)
@@ -139,69 +197,92 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARA
 		case TID_PROBLEM:
 			if (GetKeyState(VK_LWIN) >= 0 && GetKeyState(VK_RWIN) >= 0
 				&& GetKeyState(VK_MENU) >= 0 && GetKeyState(VK_CONTROL) >= 0)
-					_fmtSet.isProblemKeys = FALSE;
+					settings.isProblemKeys = FALSE;
 			break;
 		case TID_CTRLC:
+		{
 			static unsigned char iterNULL = 0;
-			if (++iterNULL == 15) //15 итераций проверки
+			if (++iterNULL == 15)	//15 итераций проверки
 			{
-				_fmtSet.isWaitingClipboard = FALSE;
+				settings.isWaitingClipboard = FALSE;
 				iterNULL = 0;
 			}
 			break;
+		}
 		case TID_CTRLV:
 			for (unsigned char i = 0; i < 255; i++) 
 				if (GetKeyState(i) < 0)
 				{
-					_fmtSet.isWaitingInput = FALSE;
+					settings.isWaitingInput = FALSE;
 					break;
 				}
+			break;
+		case TID_NEWVER:
+			if (settings.isNewVersion = IsNewVersionExist())
+				KillTimer(window, TID_NEWVER);
 			break;
 		default:
 			break;
 		}
 		break;
 	case WM_CLIPBOARDUPDATE:
-		_fmtSet.isWaitingClipboard = FALSE;
+		settings.isWaitingClipboard = FALSE;
 		break;
 	case WM_USER:
-		//Создание менюшки с кнопками
-		if (action == WM_RBUTTONUP || action == WM_LBUTTONUP || action == WM_MBUTTONDBLCLK)
+		switch (action)
 		{
+		case WM_RBUTTONUP: case WM_LBUTTONUP:
+		{
+			//Создание менюшки с кнопками
 			HMENU hMenu = CreatePopupMenu();
-			if (action == WM_MBUTTONDBLCLK)
+			if (settings.isNewVersion)
 			{
-				AppendMenuW(hMenu, _fmtSet.isVisible ? MF_CHECKED : MF_UNCHECKED, IR_HIDESHOW,
+				AppendMenuW(hMenu, 0, IR_NEWVER, L"Доступна новая версия!");
+				AppendMenuW(hMenu, MF_SEPARATOR, 0, 0);
+			}
+			AppendMenuW(hMenu, 0, IR_HELP, L"Помощь");
+			AppendMenuW(hMenu, settings.isChangeLang ? MF_CHECKED : MF_UNCHECKED, IR_SYSSWITCH,
+				L"Автоматически менять язык системы");
+			HMENU hMenuWeb = CreatePopupMenu();
+			AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hMenuWeb, L"Поисковая система");
+			UINT radio[2] = { 0, 0 };
+			radio[settings.isGoogle ? 0 : 1] = MF_CHECKED | MF_GRAYED;
+			AppendMenuW(hMenuWeb, radio[0], IR_WEB_GOOGLE, L"Google");
+			AppendMenuW(hMenuWeb, radio[1], IR_WEB_YANDEX, L"Яндекс");
+			AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+			if (settings.isDebugMode)
+			{
+				AppendMenuW(hMenu, settings.isVisible ? MF_CHECKED : MF_UNCHECKED, IR_HIDESHOW,
 					L"Режим разработчика");
-				SetMenuItemBitmaps(hMenu, IR_HIDESHOW, MF_BYCOMMAND,
-					LoadBitmapW(_histance, MAKEINTRESOURCEW(IDB_BITMAP3)), 0);
-			}
-			else
-			{
-				if (_fmtSet.isNewVersion)
-				{
-					AppendMenuW(hMenu, 0, IR_NEWVER, L"Доступна новая версия!");
-					AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-				}
-				AppendMenuW(hMenu, 0, IR_HELP, L"Помощь");
-				AppendMenuW(hMenu, _fmtSet.isChangeLang ? MF_CHECKED : MF_UNCHECKED, IR_SYSSWITCH,
-					L"Автоматически менять язык системы");
-				AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenuW(hMenu, 0, IR_EXIT, L"Выход");
+				AppendMenuW(hMenu, MF_SEPARATOR, 0, 0);
 
-				SetMenuItemBitmaps(hMenu, IR_HELP, MF_BYCOMMAND,
-					LoadBitmapW(_histance, MAKEINTRESOURCEW(IDB_BITMAP1)), 0);
-				SetMenuItemBitmaps(hMenu, IR_SYSSWITCH, MF_BYCOMMAND,
-					LoadBitmapW(_histance, MAKEINTRESOURCEW(IDB_BITMAP4)), 0);
-				SetMenuItemBitmaps(hMenu, IR_EXIT, MF_BYCOMMAND,
-					LoadBitmapW(_histance, MAKEINTRESOURCEW(IDB_BITMAP2)), 0);
+				SetMenuItemBitmaps(hMenu, IR_HIDESHOW, MF_BYCOMMAND,
+					LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP3), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
 			}
+			AppendMenuW(hMenu, 0, IR_EXIT, L"Выход");
+
+			SetMenuItemBitmaps(hMenu, IR_HELP, MF_BYCOMMAND,
+				LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP1), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
+			SetMenuItemBitmaps(hMenu, IR_SYSSWITCH, MF_BYCOMMAND,
+				LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP4), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
+			SetMenuItemBitmaps(hMenu, IR_EXIT, MF_BYCOMMAND,
+				LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP2), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
+			SetMenuItemBitmaps(hMenu, IR_WEB_GOOGLE, MF_BYCOMMAND,
+				LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP6), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
+			SetMenuItemBitmaps(hMenu, IR_WEB_YANDEX, MF_BYCOMMAND,
+				LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP7), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
+
 			POINT pt;
 			GetCursorPos(&pt);
 			SetForegroundWindow(window);
 			//TPM_BOTTOMALIGN == Меню правее курсора
 			TrackPopupMenu(hMenu, TPM_BOTTOMALIGN, pt.x, pt.y, 0, window, 0);
 			DestroyMenu(hMenu);
+			break;
+		}
+		case WM_MBUTTONDBLCLK:		settings.isDebugMode = TRUE;	break;
+		case NIN_BALLOONUSERCLICK:	system(GOTO_GITHUB);			break;
+		default:													break;
 		}
 		break;
 	case WM_COMMAND:
@@ -209,36 +290,38 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM commandID, LPARA
 		switch (commandID)
 		{
 		case IR_HELP:
-			//Создание окна.
-			if (!_helpWin)
-				_helpWin = CreateWindowW(WCN_HELP, L"Помощь", WS_SYSMENU | WS_VISIBLE,
+			if (!helpWin)
+				helpWin = CreateClientWindow(WCN_HELP, L"Помощь", WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
 					(GetSystemMetrics(SM_CXSCREEN) >> 1) - (WH_WIDTH >> 1),
 					(GetSystemMetrics(SM_CYSCREEN) >> 1) - (WH_HEIGHT >> 1),
-					WH_WIDTH + WI_WIDTH, WH_HEIGHT + WI_HEIGHT, 0, 0, _histance, 0);
-			else SetActiveWindow(_helpWin);
+					WH_WIDTH, WH_HEIGHT, histance);
+			else SetActiveWindow(helpWin);
 			break;
 		case IR_HIDESHOW:
-			_fmtSet.isVisible = !_fmtSet.isVisible;
-			if (!_consoleWin)
+			settings.isVisible = !settings.isVisible;
+			if (!consoleWin)
 			{
 				AddDebugConsole();
 				printf("%s\n", LoadAndWriteTXT(IDT_TEXT1));
 			}
-			else ShowWindow(_consoleWin, _fmtSet.isVisible ? SW_SHOW : SW_HIDE);
+			else ShowWindow(consoleWin, settings.isVisible ? SW_SHOW : SW_HIDE);
 			break;
 		case IR_SYSSWITCH:
-			_fmtSet.isChangeLang = !_fmtSet.isChangeLang;
+			settings.isChangeLang = !settings.isChangeLang;
 			break;
 		case IR_EXIT:
-			_fmtSet.isExit = TRUE;
 			UnregisterHotKey(window, LID_SWAP);
 			UnregisterHotKey(window, LID_UPDOWN);
-			if(_helpWin)
-				SendMessageW(_helpWin, WM_CLOSE, 0, 0);
+			UnregisterHotKey(window, LID_TOWEB);
+			if(helpWin)
+				SendMessageW(helpWin, WM_CLOSE, 0, 0);
 			PostQuitMessage(0);
 			break;
 		case IR_NEWVER:
-			system("start https://github.com/ParadiseMan900/Fix-my-text/releases/latest");
+			system(GOTO_GITHUB);
+		case IR_WEB_GOOGLE: case IR_WEB_YANDEX:
+			settings.isGoogle = !settings.isGoogle;
+			break;
 		default:
 			break;
 		}
@@ -253,22 +336,20 @@ void CALLBACK TimerCallback(UINT uTimerID, UINT uMsg, DWORD_PTR dwUser, DWORD_PT
 	if (frameID != ANIM_SIZE - 1)
 	{
 		frameID++;
-		InvalidateRect(_helpWin, NULL, TRUE);
-		UpdateWindow(_helpWin);
+		InvalidateRect(helpWin, NULL, TRUE);
+		UpdateWindow(helpWin);
 	}
 	else timeKillEvent(uTimerID);
 }
 LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARAM action)
 {
 	static HBITMAP hBitMap = NULL;
-	
 	static MMRESULT animTimer = 0;
 	switch (message)
 	{
 	case WM_CREATE:
 		frameID = 0;
-		hBitMap = (HBITMAP)LoadImageW(_histance,
-			MAKEINTRESOURCEW(IDB_BITMAP5), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
+		hBitMap = LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP5), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
 		animTimer = timeSetEvent(ANIM_INTERVAL, 0, TimerCallback, 0, TIME_PERIODIC | TIME_KILL_SYNCHRONOUS);
 		return 0;
 	case WM_PAINT:
@@ -284,11 +365,10 @@ LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARA
 	}
 	case WM_CLOSE:
 		DeleteObject(hBitMap);
-		DestroyWindow(_helpWin);
-		_helpWin = NULL;
+		DestroyWindow(helpWin);
+		helpWin = NULL;
 		if(frameID != ANIM_SIZE - 1)
 			timeKillEvent(animTimer);
-		PostQuitMessage(0);
 		return 0;
 	}
 	return DefWindowProcW(window, message, commandID, action);
@@ -296,7 +376,7 @@ LRESULT CALLBACK HelpReaction(HWND window, UINT message, WPARAM commandID, LPARA
 /////////////////////////////////////////////////////////////////////////////////////
 void LogMsg(const char* msg, WORD msgColor)
 {
-	if (!_consoleWin)
+	if (!consoleWin)
 		return;
 	SetColor(msgColor);
 	printf("/#/ %s /#/\n", msg);
@@ -304,7 +384,7 @@ void LogMsg(const char* msg, WORD msgColor)
 }
 void PrintStrData(struct StrData* data, const char* msg)
 {
-	if (!_consoleWin)
+	if (!consoleWin)
 		return;
 	SetColor(SC_RED);
 	printf("%s[%llu] -> ", msg, data->strSize);
@@ -328,7 +408,8 @@ void PrintStrData(struct StrData* data, const char* msg)
 }
 struct StrData GetBufer(void)
 {
-	struct StrData data = D_STRDATA;
+	struct StrData data;
+	ZeroMemory(&data, sizeof(struct StrData));
 	while (!OpenClipboard(0))
 		Sleep(USER_TIMER_MINIMUM);
 	LogMsg("Call GetBufer", SC_YELLOW);
@@ -395,7 +476,7 @@ bool LIsCharInTheLine(const wchar_t* str, size_t strSize, wchar_t wchar)
 			return TRUE;
 	return FALSE;
 }
-void LogicSwitch(struct StrData* opt, int switcher)
+void LogicSwitch(struct StrData* opt, unsigned switcher)
 {
 	switch (switcher)
 	{
@@ -447,8 +528,8 @@ void LogicSwitch(struct StrData* opt, int switcher)
 				lastID = i + 1;
 			}
 		LogMsg("Смена языка выполнена", SC_GREEN);
-	}
 		break;
+	}
 	case LID_UPDOWN:
 	{
 		wchar_t upChar;
@@ -458,8 +539,41 @@ void LogicSwitch(struct StrData* opt, int switcher)
 			opt->str[i] = opt->str[i] == upChar ? LDown(opt->str[i]) : upChar;
 		}
 		LogMsg("Смена регистра выполнена", SC_GREEN);
-	}
 		break;
+	}
+	case LID_TOWEB:
+	{
+		USHORT plusCounter = 0;			//+ = %2B
+		for (size_t i = 0; i < opt->strSize - 1; i++)
+			if (opt->str[i] == '+')
+				plusCounter++;
+		wchar_t* strCopy = calloc((opt->strSize + (size_t)plusCounter * 2), sizeof(wchar_t));
+		if (strCopy)
+		{
+			for (size_t i = 0, j = 0; i < opt->strSize - 1; i++, j++)
+				switch (opt->str[i])
+				{
+				case L' ':	case L'\t':	strCopy[j] = L'+';												break;
+				case L'+':	strCopy[j] = L'%';	strCopy[j + 1] = L'2'; strCopy[j + 2] = L'B'; j += 2;	break;
+				default:	strCopy[j] = opt->str[i];													break;
+				}
+
+			const wchar_t* emptyLink = 	settings.isGoogle ?
+				L"start https://www.google.ru/search?q=" : L"start https://yandex.ru/search/?text=";
+			size_t linkSize = wcslen(emptyLink) + wcslen(strCopy) + 1;
+			wchar_t* link = calloc(linkSize, sizeof(wchar_t));
+			if (link)
+			{
+				wcscpy_s(link, linkSize, emptyLink);
+				wcscat_s(link, linkSize, strCopy);
+				_wsystem(link);
+				free(link);
+				LogMsg("Передача текста в браузер выполнена", SC_GREEN);
+			}
+			free(strCopy);
+		}
+		break;
+	}
 	default:
 		return;
 	}
@@ -481,178 +595,189 @@ void EmulateACombinationWithCtrl(wchar_t key)
 		LogMsg("Emulate ERROR", SC_GREEN);
 }
 /////////////////////////////////////////////////////////////////////////////////////
-bool IsNewVersionExist(void)
-{
-	HINTERNET hInterOpen = InternetOpenA("fmt", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-	if (!hInterOpen)
-		return FALSE;
-	HINTERNET hInterconnect = InternetOpenUrlA(hInterOpen,
-		"https://api.github.com/repos/ParadiseMan900/Fix-my-text/tags", NULL, 0, 0, 0);
-	if (!hInterconnect)
-		return FALSE;
-	size_t dataSize;
-	InternetQueryDataAvailable(hInterconnect, &dataSize, 0, 0);
-	char* str = (char*)malloc(sizeof(char) * (dataSize + 1));
-	if(!str)
-		return FALSE;
-	str[dataSize] = '\0';
-	InternetReadFile(hInterconnect, str, dataSize, &dataSize);
-	InternetCloseHandle(hInterconnect);
-	InternetCloseHandle(hInterOpen);
-	bool result = FALSE;
-	unsigned verSize = 0;
-	while (str[VERSIONID + verSize] != '\"')
-		verSize++;
-	char* version = (char*)malloc(sizeof(char) * (verSize + 1));
-	if (version)
-	{
-		version[verSize] = '\0';
-		for (unsigned i = 0; i < verSize; i++)
-			version[i] = str[VERSIONID + i];
-		if (strcmp(version, VERSION))
-			result = TRUE;
-		free(version);
-	}
-	free(str);
-	return result;
-}
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
-int WINAPI WinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ char* cmdline, _In_ int cmdshow)
+int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCHAR* cmdLine, _In_ int cmdShow)
 {
 	////	Проверка на существование запущенной программы
 	HANDLE hMutex = CreateMutexW(0, TRUE, L"FMT");
 	if (!hMutex || GetLastError() == ERROR_ALREADY_EXISTS)
 		return 1;
 
-	////	Поиск, создание и регестрация окна, проверки, и т.п.
-	_histance = GetModuleHandleW(NULL);
-	NOTIFYICONDATA icon;
-	ZeroMemory(&icon, sizeof(icon));
+	//// Импорт настроек
 	{
-		////	Регистрация класса (штука, чтобы "CALLBACK IconReaction" вызывалась)
+		SetFileAttributesA(SET_FILE, FILE_ATTRIBUTE_NORMAL);
+		FILE* fSettings;
+		fopen_s(&fSettings, "FMT_Settings.txt", "r");
+		if (fSettings)
+		{
+			bool scanValue[2] = { 0, 0 };
+			int scanCode = fscanf_s(fSettings, "%hhu %hhu", &scanValue[0], &scanValue[1]);
+			if (scanCode && scanCode != EOF)
+			{
+				settings.isChangeLang = scanValue[0];
+				settings.isGoogle = scanValue[1];
+			}
+			fclose(fSettings);
+			SetFileAttributesA(SET_FILE, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN);
+		}
+	}
+
+	////	Реакция на атрибуты
+	{
+		int argsCount;
+		wchar_t** cmdArgvLine;
+		if (cmdArgvLine = CommandLineToArgvW(cmdLine, &argsCount))
+			for (int i = 0; i != argsCount; i++)
+				if (!lstrcmpW(cmdArgvLine[i], L"debug"))
+				{
+					settings.isDebugMode = TRUE;
+					break;
+				}
+	}
+
+	////	Поиск, создание и регестрация окна, настройки
+	histance = hInst;
+	{
+		////	Регистрация классов
 		WNDCLASS wc;	
 		ZeroMemory(&wc, sizeof(wc));
 		wc.lpfnWndProc = IconReaction;
-		wc.hInstance = _histance;
+		wc.hInstance = histance;
 		wc.lpszClassName = WCN_ICON;
 		RegisterClassW(&wc);
 
-		////	Создание и добавление окна (в виде иконки) в трей
-		icon.cbSize = sizeof(icon);
-		icon.hWnd = CreateWindowW(wc.lpszClassName, wc.lpszClassName, 0, 0, 0, 0, 0, 0, 0, wc.hInstance, 0);
-		icon.uVersion = NOTIFYICON_VERSION;
-		icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-		icon.uCallbackMessage = WM_USER;
-		//IDI_ICON1 - ID Иконки из файла ресурсов.
-		icon.hIcon = LoadIconW(_histance, MAKEINTRESOURCEW(IDI_ICON1));
-		const wchar_t* tip = L"Fix my text";
-		wcscpy_s(icon.szTip, wcslen(tip) + 1, tip);
-
-		////	Регистрация класса (штука, чтобы "CALLBACK HelpReaction" вызывалась)
 		WNDCLASS wc2;
 		ZeroMemory(&wc2, sizeof(wc2));
 		wc2.lpfnWndProc = HelpReaction;
-		wc2.hInstance = _histance;
+		wc2.hInstance = histance;
 		wc2.lpszClassName = WCN_HELP;
-		wc2.hbrBackground = NULL;
-		wc2.hIcon = LoadIconW(_histance, MAKEINTRESOURCEW(IDI_ICON1));
+		wc2.hIcon = LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0,	LR_DEFAULTSIZE);
 		RegisterClassW(&wc2);
-	}
-	Shell_NotifyIconW(NIM_ADD, &icon);
 
-	////	ВСЕ ПЕРЕМЕННЫЕ 
-	struct StrData conservation = D_STRDATA, selected = D_STRDATA;
-	unsigned switcher = 0;
+		////	Создание и добавление окна (в виде иконки) в трей
+		ZeroMemory(&nTray, sizeof(nTray));
+		nTray.cbSize = sizeof(nTray);
+		nTray.hWnd = CreateWindowW(wc.lpszClassName, wc.lpszClassName, 0, 0, 0, 0, 0, 0, 0, wc.hInstance, 0);
+		nTray.uVersion = NOTIFYICON_VERSION;
+		nTray.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+		nTray.uCallbackMessage = WM_USER;
+		//IDI_ICON1 - ID Иконки из файла ресурсов.
+		nTray.hIcon = LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+		lstrcpyW(nTray.szTip, L"Fix my text");
+		nTray.hBalloonIcon = LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0, 0);
+		nTray.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON | NIIF_RESPECT_QUIET_TIME;
+		lstrcpyW(nTray.szInfoTitle, L"Появилась новая версия приложения!");
+		lstrcpyW(nTray.szInfo, L"Нажмите на иконку, чтобы перейти на страницу с новой версией приложения");
+		Shell_NotifyIconW(NIM_ADD, &nTray);
+		nTray.uFlags |= NIF_INFO;
+		DestroyIcon(nTray.hIcon);
+		nTray.hIcon = LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON2), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+	}
 
 	////	Провкерка новой версии
-	_fmtSet.isNewVersion = IsNewVersionExist();
+	if (!(settings.isNewVersion = IsNewVersionExist()))
+		SetTimer(nTray.hWnd, TID_NEWVER, 600'000, NULL);	//Каждые 10 минут
+
+	////	ВСЕ ПЕРЕМЕННЫЕ 
+	struct StrData conservation, selected;
+	ZeroMemory(&conservation, sizeof(struct StrData));
+	ZeroMemory(&selected, sizeof(struct StrData));
 
 	////	ЦАРЬ БАТЮШКА ЦИКЛ
 	MSG msg;
 	ZeroMemory(&msg, sizeof(msg));
-	while (!_fmtSet.isExit)
-		if (GetMessageW(&msg, NULL, 0, 0))
+	while (GetMessageW(&msg, NULL, 0, 0))
+	{
+		DispatchMessageW(&msg);
+		if (msg.message != WM_HOTKEY)
+			continue;
+		unsigned swither = (unsigned)msg.wParam;
+		if (consoleWin)
+			printf("--------------------------------------------------------------------------------------\n");
+
+		////	Получение CONSERVATION
+		conservation = GetBufer();
+		PrintStrData(&conservation, VAR_NAME(conservation));
+
+		////	Проблемные кнопки, мешающие копированию
+		SetTimer(nTray.hWnd, TID_PROBLEM, USER_TIMER_MINIMUM, NULL);
+		settings.isProblemKeys = TRUE;
+		while (settings.isProblemKeys)
+			if (GetMessageW(&msg, NULL, 0, 0))
+				DispatchMessageW(&msg);
+		KillTimer(nTray.hWnd, TID_PROBLEM);
+
+		////	Эмуляция Ctrl+C
+		AddClipboardFormatListener(nTray.hWnd);
+		SetTimer(nTray.hWnd, TID_CTRLC, USER_TIMER_MINIMUM, NULL);
+		settings.isWaitingClipboard = TRUE;
+		EmulateACombinationWithCtrl('C');
+		while (settings.isWaitingClipboard)
+			if (GetMessageW(&msg, NULL, 0, 0))
+				DispatchMessageW(&msg);
+		KillTimer(nTray.hWnd, TID_CTRLC);
+		RemoveClipboardFormatListener(nTray.hWnd);
+
+		////	Получение SELECTED
+		selected = GetBufer();
+		PrintStrData(&selected, VAR_NAME(selected));
+
+		////	Пропускаем логику если ничего не выделенно
+		if (!selected.str)
 		{
-			DispatchMessageW(&msg);
-			if (msg.message == WM_HOTKEY)
-			{
-				switcher = (unsigned)msg.wParam;
-				if (_consoleWin)
-					printf("--------------------------------------------------------------------------------------\n");
-
-				////	Получение CONSERVATION
-				conservation = GetBufer();
-				PrintStrData(&conservation, VAR_NAME(conservation));
-
-				////	Проблемные кнопки, мешающие копированию
-				SetTimer(icon.hWnd, TID_PROBLEM, USER_TIMER_MINIMUM, NULL);
-				_fmtSet.isProblemKeys = TRUE;
-				while (_fmtSet.isProblemKeys)
-					if (GetMessageW(&msg, NULL, 0, 0))
-						DispatchMessageW(&msg);
-				KillTimer(icon.hWnd, TID_PROBLEM);
-
-				////	Эмуляция Ctrl+C
-				AddClipboardFormatListener(icon.hWnd);
-				SetTimer(icon.hWnd, TID_CTRLC, USER_TIMER_MINIMUM, NULL);
-				_fmtSet.isWaitingClipboard = TRUE;
-				EmulateACombinationWithCtrl('C');
-				while (_fmtSet.isWaitingClipboard)
-					if (GetMessageW(&msg, NULL, 0, 0))
-						DispatchMessageW(&msg);
-				KillTimer(icon.hWnd, TID_CTRLC);
-				RemoveClipboardFormatListener(icon.hWnd);
-
-				////	Получение SELECTED
-				selected = GetBufer();
-				PrintStrData(&selected, VAR_NAME(selected));
-
-				////	Скипаем логику если ничего не выделенно
-				if (!selected.str)
-				{
-					LogMsg("Ничего не выделенно", SC_GREEN);
-					SetBufer(&conservation);
-					continue;
-				}
-				if (selected.format == CF_DIB)
-				{
-					LogMsg("Пропуск картинки", SC_GREEN);
-					SetBufer(&conservation);
-					continue;
-				}
-
-				////	Самая главная функция																		<<<===
-				LogicSwitch(&selected, switcher);														  
-				PrintStrData(&selected, VAR_NAME(selected));
-				SetBufer(&selected);
-
-				////	Эмуляция Ctrl+V
-				EmulateACombinationWithCtrl('V');
-
-				////	Ожидания действий для корректной вставки CONSERVATION
-				SetTimer(icon.hWnd, TID_CTRLV, USER_TIMER_MINIMUM, NULL);
-				_fmtSet.isWaitingInput = TRUE;
-				while (_fmtSet.isWaitingInput)
-					if (GetMessageW(&msg, NULL, 0, 0))
-						DispatchMessageW(&msg);
-				KillTimer(icon.hWnd, TID_CTRLV);
-
-				////	Вставка CONSERVATION
-				SetBufer(&conservation);
-
-				////	Смена языка (при включеной галочки)
-				if (_fmtSet.isChangeLang && switcher == LID_SWAP)
-					PostMessageW(GetForegroundWindow(), WM_INPUTLANGCHANGEREQUEST, 0, 0);
-			}
+			LogMsg("Ничего не выделенно", SC_GREEN);
+			SetBufer(&conservation);
+			continue;
 		}
+		if (selected.format == CF_DIB)
+		{
+			LogMsg("Пропуск картинки", SC_GREEN);
+			SetBufer(&conservation);
+			continue;
+		}
+
+		////	Самая главная функция																		<<<===
+		LogicSwitch(&selected, swither);
+		if (swither == LID_SWAP || swither == LID_UPDOWN)
+		{
+			PrintStrData(&selected, VAR_NAME(selected));
+			SetBufer(&selected);
+
+			////	Эмуляция Ctrl+V
+			EmulateACombinationWithCtrl('V');
+
+			////	Ожидания действий для корректной вставки CONSERVATION
+			SetTimer(nTray.hWnd, TID_CTRLV, USER_TIMER_MINIMUM, NULL);
+			settings.isWaitingInput = TRUE;
+			while (settings.isWaitingInput)
+				if (GetMessageW(&msg, NULL, 0, 0))
+					DispatchMessageW(&msg);
+			KillTimer(nTray.hWnd, TID_CTRLV);
+		}
+
+		////	Вставка CONSERVATION
+		SetBufer(&conservation);
+
+		////	Смена языка (при включеной галочки)
+		if (settings.isChangeLang && swither == LID_SWAP)
+			PostMessageW(GetTopWindow(GetDesktopWindow()), WM_INPUTLANGCHANGEREQUEST, 0, 0);
+	}
+	//// Экспорт настроек
+	SetFileAttributesA(SET_FILE, FILE_ATTRIBUTE_NORMAL);
+	FILE* fSettings;
+	fopen_s(&fSettings, SET_FILE, "w");
+	if (fSettings)
+	{
+		fprintf_s(fSettings, "%hhu %hhu", settings.isChangeLang, settings.isGoogle);
+		fclose(fSettings);
+		SetFileAttributesA(SET_FILE, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN);
+	}
 	////	Очитска
-	DestroyWindow(icon.hWnd);
-	Shell_NotifyIconW(NIM_DELETE, &icon);
-	UnregisterClassW(WCN_ICON, _histance);
-	UnregisterClassW(WCN_HELP, _histance);
-	if (_consoleWin)
+	KillTimer(nTray.hWnd, TID_NEWVER);
+	DestroyWindow(nTray.hWnd);
+	Shell_NotifyIconW(NIM_DELETE, &nTray);
+	UnregisterClassW(WCN_ICON, histance);
+	UnregisterClassW(WCN_HELP, histance);
+	if (consoleWin)
 		FreeConsole();
 	ReleaseMutex(hMutex);
 	return 0;
