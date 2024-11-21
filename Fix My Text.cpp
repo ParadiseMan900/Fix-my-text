@@ -14,7 +14,7 @@ using namespace Gdiplus;
 #define VAR_NAME(name)			#name
 
 //FMT Version data
-#define	VERSION					"v6.3"
+#define	VERSION					"v7.0"
 #define VERSIONID				10U
 //Icon Reaction IDs
 #define IR_SETT					1U
