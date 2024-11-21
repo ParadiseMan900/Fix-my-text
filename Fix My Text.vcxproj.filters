@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Fix My Text.c">
+    <ClCompile Include="Fix My Text.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
   </ItemGroup>
@@ -42,19 +42,7 @@
     <Image Include="KONSOL.bmp">
       <Filter>Файлы ресурсов</Filter>
     </Image>
-    <Image Include="REVERS.bmp">
-      <Filter>Файлы ресурсов</Filter>
-    </Image>
-    <Image Include="AID_HELP.bmp">
-      <Filter>Файлы ресурсов</Filter>
-    </Image>
     <Image Include="FMT+.ico">
-      <Filter>Файлы ресурсов</Filter>
-    </Image>
-    <Image Include="Google.bmp">
-      <Filter>Файлы ресурсов</Filter>
-    </Image>
-    <Image Include="Yandex.bmp">
       <Filter>Файлы ресурсов</Filter>
     </Image>
   </ItemGroup>

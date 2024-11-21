@@ -119,6 +119,8 @@
       <ControlFlowGuard>
       </ControlFlowGuard>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -127,6 +129,9 @@
       <Version>
       </Version>
     </Link>
+    <Manifest>
+      <EnableDpiAwareness>false</EnableDpiAwareness>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -151,9 +156,12 @@
       <Version>
       </Version>
     </Link>
+    <Manifest>
+      <EnableDpiAwareness>false</EnableDpiAwareness>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Fix My Text.c" />
+    <ClCompile Include="Fix My Text.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
@@ -162,15 +170,11 @@
     <ResourceCompile Include="Fix My Text.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="AID_HELP.bmp" />
     <Image Include="FMT+.ico" />
-    <Image Include="Google.bmp" />
-    <Image Include="REVERS.bmp" />
     <Image Include="FMT.ico" />
     <Image Include="KONSOL.bmp" />
     <Image Include="KREST.bmp" />
     <Image Include="PALKA.bmp" />
-    <Image Include="Yandex.bmp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="FMT_Consol.txt" />

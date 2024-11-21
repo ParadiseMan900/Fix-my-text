@@ -7,11 +7,7 @@
 #define IDB_BITMAP2                     109
 #define IDB_BITMAP3                     110
 #define IDT_TEXT1                       111
-#define IDB_BITMAP4                     117
-#define IDB_BITMAP5                     118
 #define IDI_ICON2                       119
-#define IDB_BITMAP6                     120
-#define IDB_BITMAP7                     122
 #define TEXTFILE                        256
 
 // Next default values for new objects
