@@ -14,7 +14,7 @@ using namespace Gdiplus;
 #define VAR_NAME(name)			#name
 
 //FMT Version data
-#define	VERSION					"v7.0"
+#define	VERSION					"v7.1"
 #define VERSIONID				10U
 //Icon Reaction IDs
 #define IR_SETT					1U
@@ -43,8 +43,7 @@ using namespace Gdiplus;
 //Timer Settings
 #define TID_PROBLEM				1U
 #define TID_CTRLC				2U
-#define TID_CTRLV				3U
-#define TID_NEWVER				4U
+#define TID_NEWVER				3U
 //GitHub links
 #define GITHUB_MAIN				L"https://github.com/ParadiseMan900/Fix-my-text"
 #define GITHUB_RELEASE			L"https://github.com/ParadiseMan900/Fix-my-text/releases/latest"
@@ -53,13 +52,14 @@ using namespace Gdiplus;
 //Bool Settings Departments
 #define BSID_CHANGE_LANG		0U
 #define BSID_CHANGE_CAPS		1U
-#define BSID_YANDEX				2U
+#define BSID_YANDEX_SEARCH		2U
+#define BSID_YANDEX_TRANSLATE	3U
 #define BSID_NEW_VERSION		0U
 #define BSID_PROBLEM_KEYS		1U
-#define BSID_WAITING_INPUT		2U
-#define BSID_WAITING_CLIPBOARD	3U
-#define BSID_DEBUG_MODE			4U
-#define BSID_DEBUG_VISIBLE		5U
+#define BSID_WAITING_CLIPBOARD	2U
+#define BSID_DEBUG_MODE			3U
+#define BSID_DEBUG_VISIBLE		4U
+#define BSID_PAGES_SPIN			5U
 //Settings app values
 #define	CX						1280U
 #define CY						720U
@@ -69,9 +69,9 @@ using namespace Gdiplus;
 #define MOUSE_NULL_ID           -1
 #define MOUSE_GH_ID             -2
 #define COLR_CHOOSE_SIZE		3
-#define GDI_RECT(rt)			(int)rt.left, (int)rt.top, (int)rt.right - (int)rt.left, (int)rt.bottom - (int)rt.top
+#define KEY_NAME_SIZE			16
+#define RECT_LTWH(rt)			(int)(rt).left, (int)(rt).top, (int)(rt).right - (int)(rt).left, (int)(rt).bottom - (int)(rt).top
 #define ALLOC(memeory)			if(!(memeory)) exit(1)
-#define COLR_SET(arr, l, r)		*((unsigned long long*)arr) = l | ((unsigned long long)r << 32)
 //Page Blocks ID
 #define PB_MASK                 0xFU
 #define PBID_DESCRIPTION        0x0U
@@ -109,9 +109,9 @@ typedef struct _BlockHotkey
 {
 	Hotkey* hk;
 	byte keysCount;
-	wchar_t nameArr[5][16];
-	int fontCy;
+	wchar_t nameArr[5][KEY_NAME_SIZE];
 	USHORT voidSize;
+	int fontCy;
 	RECT keysRt;
 } BHOTKEY;
 typedef struct _BlockChekbox
@@ -133,34 +133,35 @@ typedef struct _Block
 typedef struct _FuncPage
 {
 	const wchar_t* funcName;
-	size_t blocksCount;
+	byte blocksCount;
 	Block* blocks;
 	RECT btnRt;
 } FuncPage;
 typedef struct _HotkeyVariables
 {
 	HHOOK hook;
-	char blockID;
 	BHOTKEY userObj;
 	Hotkey userHk;
 	bool isFixed;
 	bool isCanSet;
 	RECT winRt;
 	RECT btnArrRt[HB_SIZE];
+	char blockID;
 } KeyVar;
 typedef struct _GraphicalVariables
 {
 	HWND settWin;
 	FuncPage* pages;
 	byte pagesCount;
+	bool isNeedToSave, isActiveWin;
 	HFONT font;
 	USHORT voidSize, boxCx, boxCy;
 	USHORT fontS, fontM, fontL, fontXL;
 	USHORT boxOffset, textOffset, headerOffset, hotkeyOffset;
-	char optID, mouseID;
+	char optID, mouseID, clickID;
 	RECT githubRt;
 	KeyVar* kv;
-	bool isNeedToSave;
+	byte lastDPI;
 } GraphVar;
 
 //	Глобальности
@@ -170,7 +171,7 @@ NOTIFYICONDATAW nTray;
 GraphVar* gv = 0;
 Hotkey defaultHkSett[] = { { MOD_SHIFT | MOD_WIN, 'Z' }, { MOD_SHIFT | MOD_WIN, 'X' }, { MOD_ALT | MOD_WIN, 'Z' }, { MOD_ALT | MOD_WIN, 'X' } };
 Hotkey fileHkSett[sizeof(defaultHkSett) / sizeof(*defaultHkSett)];
-bool fileBoolSett[] = { 1, 1, 1 };
+bool fileBoolSett[] = { 1, 1, 1, 1 };
 bool tempSett[] = { 0, 0, 0, 0, 0, 0};
 
 void LogMsg(const char* msg, WORD msgColor)
@@ -182,6 +183,219 @@ void LogMsg(const char* msg, WORD msgColor)
 	ConsColor(SC_WHITE);
 }
 /////////////////////////////////////////////////////////////////////////////////////
+void PrintStrData(StrData* data, const char* msg)
+{
+	if (!consoleWin)
+		return;
+	ConsColor(SC_RED);
+	printf("%s[%llu] -> ", msg, data->strSize);
+	switch (data->format)
+	{
+	case CF_UNICODETEXT:
+		ConsColor(SC_WHITE);
+		wprintf(L"\"%s\"\n", data->str);
+		break;
+	case CF_DIB:
+		ConsColor(SC_SKY);
+		printf("* PICTURE / КАРТИНКА *\n");
+		ConsColor(SC_WHITE);
+		break;
+	default:
+		ConsColor(SC_NULL);
+		printf("|| NULL ||\n");
+		ConsColor(SC_WHITE);
+		break;
+	}
+}
+StrData GetBufer(void)
+{
+	StrData data;
+	ZeroMemory(&data, sizeof(StrData));
+	while (!OpenClipboard(0))
+		Sleep(USER_TIMER_MINIMUM);
+	LogMsg("Call GetBufer", SC_YELLOW);
+	if (!IsClipboardFormatAvailable(data.format = CF_UNICODETEXT)
+		&& !IsClipboardFormatAvailable(data.format = CF_DIB))
+	{
+		CloseClipboard();
+		data.format = 0;
+		return data;
+	}
+	wchar_t* clipData = (wchar_t*)GetClipboardData(data.format);
+	if (data.format == CF_UNICODETEXT)
+		data.strSize = wcslen(clipData) + 1;
+	data.byteSize = GlobalSize(clipData);
+	data.str = (wchar_t*)malloc(data.byteSize);
+	if (data.str)
+		memcpy(data.str, clipData, data.byteSize);
+	EmptyClipboard();
+	CloseClipboard();
+	return data;
+}
+void SetBufer(StrData* data)
+{
+	while (!OpenClipboard(0))
+		Sleep(USER_TIMER_MINIMUM);
+	EmptyClipboard();
+	if (data->format)
+	{
+		HANDLE clipData = GlobalAlloc(GMEM_FIXED, data->byteSize);
+		if (clipData)
+			memcpy(clipData, data->str, data->byteSize);
+		SetClipboardData(data->format, clipData);
+		free(data->str);
+		ZeroMemory(data, sizeof(StrData));
+	}
+	CloseClipboard();
+	LogMsg("Call SetBufer", SC_YELLOW);
+}
+wchar_t LUp(wchar_t letter)
+{
+	if ((letter >= L'a' && letter <= L'z')
+		|| (letter >= L'а' && letter <= L'я'))
+		letter -= CASE_DIFFERENCE;
+	if (letter == L'ё')
+		letter = L'Ё';
+	return letter;
+}
+wchar_t LDown(wchar_t letter)
+{
+	if ((letter >= L'A' && letter <= L'Z')
+		|| (letter >= L'А' && letter <= L'Я'))
+		letter += CASE_DIFFERENCE;
+	if (letter == L'Ё')
+		letter = L'ё';
+	return letter;
+}
+bool LIsCharInTheLine(const wchar_t* str, size_t strSize, wchar_t wchar)
+{
+	for (size_t i = 0; i < strSize; i++)
+		if (str[i] == wchar)
+			return TRUE;
+	return 0;
+}
+void LStrToInet(StrData* opt, const wchar_t* link)
+{
+	size_t linkSize = wcslen(link) + opt->strSize + 1;
+	wchar_t* fullLink = (wchar_t*)calloc(linkSize, sizeof(wchar_t));
+	if (fullLink)
+	{
+		wcscpy_s(fullLink, linkSize, link);
+		wcscat_s(fullLink, linkSize, opt->str);
+		ShellExecuteW(0, 0, fullLink, 0, 0, 0);
+		free(fullLink);
+	}
+}
+void LogicSwitch(StrData* opt, unsigned switcher)
+{
+	switch (switcher)
+	{
+	case LID_SWAP:
+	{
+		const wchar_t* engChars = L"`~@#$^&qQwWeErRtTyYuUiIoOpP[{]}|aAsSdDfFgGhHjJkKlL;:'\"zZxXcCvVbBnNmM,<.>/?";
+		const wchar_t* rusChars = L"ёЁ\"№;:?йЙцЦуУкКеЕнНгГшШщЩзЗхХъЪ/фФыЫвВаАпПрРоОлЛдДжЖэЭяЯчЧсСмМиИтТьЬбБюЮ.,";
+		const wchar_t* sameChars = L"1234567890!%*()-_=+\\\";:?.,/";
+		size_t swapCharsSize = wcslen(engChars);
+		size_t sameCharsSize = wcslen(sameChars);
+		unsigned engCount;
+		unsigned rusCount;
+		wchar_t* oneWord;
+		size_t wordLen;
+		size_t lastID = 0;
+		const wchar_t* tempP;
+		const wchar_t* tempP2;
+		for (size_t i = 0; i < opt->strSize; i++)
+			if (opt->str[i] == L' ' || opt->str[i] == L'\t' || opt->str[i] == L'\n' || opt->str[i] == L'\0')
+			{
+				wordLen = (size_t)i - lastID;
+				oneWord = opt->str + lastID;
+				engCount = 0;
+				rusCount = 0;
+				for (size_t j = 0; j < wordLen; j++)
+				{
+					if (LIsCharInTheLine(sameChars, sameCharsSize, oneWord[j]))
+						continue;
+					if (LIsCharInTheLine(engChars, swapCharsSize, oneWord[j]))
+						engCount++;
+					else rusCount++;
+				}
+				tempP = tempP2 = engChars;
+				(engCount >= rusCount ? tempP2 : tempP) = rusChars;
+				for (size_t j = 0; j < wordLen; j++)
+					for (size_t k = 0; k < swapCharsSize; k++)
+						if (tempP[k] == oneWord[j])
+						{
+							oneWord[j] = tempP2[k];
+							break;
+						}
+				lastID = i + 1;
+			}
+		LogMsg("Смена языка выполнена", SC_GREEN);
+		break;
+	}
+	case LID_UPDOWN:
+	{
+		wchar_t upChar;
+		for (size_t i = 0; i < opt->strSize - 1; i++)
+		{
+			upChar = LUp(opt->str[i]);
+			opt->str[i] = opt->str[i] == upChar ? LDown(opt->str[i]) : upChar;
+		}
+		LogMsg("Смена регистра выполнена", SC_GREEN);
+		break;
+	}
+	case LID_TOWEB:
+		LStrToInet(opt, fileBoolSett[BSID_YANDEX_SEARCH] ? L"https://ya.ru?q=" : L"https://www.google.com/search?q=");
+		LogMsg("Поиск по тексту выполнен", SC_GREEN);
+		break;
+	case LID_TRANSLATE:
+		LStrToInet(opt, fileBoolSett[BSID_YANDEX_TRANSLATE] ? L"https://translate.yandex.ru/?source_lang=en&target_lang=ru&text=" :
+			L"https://translate.google.ru/?sl=auto&tl=ru&text=");
+		LogMsg("Перевод текеста выполнен", SC_GREEN);
+		break;
+	default:
+		return;
+	}
+}
+void EmulateCombination(const byte keysCount, ...)
+{
+	USHORT inputCount = keysCount * 2;
+	INPUT* input = (INPUT*)calloc(inputCount, sizeof(INPUT));
+	ALLOC(input);
+	va_list valist;
+	va_start(valist, keysCount);
+	for (USHORT i = 0; i != keysCount; i++)
+	{
+		input[i].type = INPUT_KEYBOARD;
+		input[i + keysCount].type = INPUT_KEYBOARD;
+		input[i + keysCount].ki.dwFlags = KEYEVENTF_KEYUP;
+		input[i].ki.wVk = input[i + keysCount].ki.wVk = va_arg(valist, WORD);
+	}
+	va_end(valist);
+	if (SendInput(inputCount, input, sizeof(INPUT)) != inputCount)
+		LogMsg("Emulate ERROR", SC_GREEN);
+}
+/////////////////////////////////////////////////////////////////////////////////////
+void AdjustRectByDPI(RECT* rt, byte dpiNew, byte dpiOld)
+{
+	if (dpiNew == dpiOld)
+		return;
+	double ratio = (double)dpiNew / dpiOld;
+	SIZE rtSize = { rt->right - rt->left, rt->bottom - rt->top };
+	SIZE rtNewSize = { (long)(rtSize.cx * ratio), (long)(rtSize.cy * ratio) };
+	rt->right = rt->left + rtNewSize.cx;
+	rt->bottom = rt->top + rtNewSize.cy;
+	OffsetRect(rt, -(rtNewSize.cx - rtSize.cx) >> 1, -(rtNewSize.cy - rtSize.cy) >> 1);
+}
+void AntiAdjustWindowRect(RECT* rt)
+{
+	RECT negativeRT = { 0, 0, 0, 0 };
+	AdjustWindowRect(&negativeRT, WS_CAPTION, FALSE);	// +- {-8, -31, 8, 8}
+	rt->left -= negativeRT.left;
+	rt->top -= negativeRT.top;
+	rt->right -= negativeRT.right;
+	rt->bottom -= negativeRT.bottom;
+}
 HDC BeginPaintOnce(HWND window, LPPAINTSTRUCT lps, HBITMAP* hBmp)
 {
 	BeginPaint(window, lps);
@@ -197,10 +411,10 @@ void EndPaintOnce(HWND window, LPPAINTSTRUCT lps, HBITMAP hBmp, HDC hcdc)
 	DeleteObject(hBmp);
 	EndPaint(window, lps);
 }
-void SetPage(const wchar_t* name, size_t blocksCount, ...)
+void SetPage(const wchar_t* name, byte blocksCount, ...)
 {
 	FuncPage* curPage = (FuncPage*)realloc(gv->pages, ++gv->pagesCount * sizeof(FuncPage));
-	if(!curPage)
+	if (!curPage)
 		exit(1);
 	gv->pages = curPage;
 	curPage += gv->pagesCount - 1;
@@ -306,13 +520,13 @@ SIZE GetTextSize(HDC hdc, UINT format, const wchar_t* text, RECT rt)
 	return { rt.right - rt.left, rt.bottom - rt.top };
 }
 HFONT SelectFont(HDC hdc, HFONT* hfont, int fontSize, int fontBold)
-{ 
+{
 	LOGFONTW lfw;
 	ZeroMemory(&lfw, sizeof(LOGFONTW));
 	GetObjectW(*hfont, sizeof(LOGFONTW), &lfw);
-	if(fontSize)
+	if (fontSize)
 		lfw.lfHeight = fontSize;
-	if(fontBold)
+	if (fontBold)
 		lfw.lfWeight = fontBold;
 	HFONT result = *hfont;
 	*hfont = CreateFontIndirectW(&lfw);
@@ -326,11 +540,25 @@ void SelectFontOnce(HDC hdc, HFONT* hfont, int fontSize, int fontBold)
 void MovePageID(bool isDown)
 {
 	char tempID = gv->optID + (isDown ? 1 : -1);
-	if (tempID != gv->pagesCount && tempID != -1)
-	{
-		gv->optID = tempID;
-		InvalidateRect(gv->settWin, 0, TRUE);
-	}
+	if (tempSett[BSID_PAGES_SPIN])
+		tempID = (tempID + gv->pagesCount) % gv->pagesCount;
+	else if (tempID == gv->pagesCount || tempID == -1)
+		return;
+	gv->optID = tempID;
+	InvalidateRect(gv->settWin, 0, TRUE);
+}
+void ResetMouseID(void)
+{
+	gv->mouseID = MOUSE_NULL_ID;
+	SetCursor((HCURSOR)LoadImageW(0, IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED));
+}
+void GetNameByVK(UINT vk, wchar_t* buff)
+{
+	ZeroMemory(buff, KEY_NAME_SIZE);
+	GetKeyNameTextW(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC) << 16, buff, KEY_NAME_SIZE - 1);
+	if (!*buff)
+		lstrcpyW(buff, L"NULL");
+	else *buff = LUp(*buff);
 }
 SIZE CalculateHotkey(BHOTKEY* obj)
 {
@@ -349,8 +577,8 @@ SIZE CalculateHotkey(BHOTKEY* obj)
 		}
 	if (obj->hk->main)
 	{
-		wchar_t buff[sizeof(*obj->nameArr) / sizeof(**obj->nameArr)] = { 0 };
-		GetKeyNameTextW(MapVirtualKeyW(obj->hk->main, MAPVK_VK_TO_VSC) << 16, buff, 15);
+		wchar_t buff[KEY_NAME_SIZE] = { 0 };
+		GetNameByVK(obj->hk->main, buff);
 		int mainKeyCx = GetTextSize(calcHdc, 0, buff, clientRT).cx;
 		if (mainKeyCx < obj->fontCy)
 			mainKeyCx = obj->fontCy;
@@ -402,7 +630,7 @@ void CalculatePaintComponents(void)
 			}
 			else if (j)
 				OffsetRect(&pageRT, 0, gv->headerOffset);
-			pageRT.bottom += GetTextSize(calcHdc, DT_WORDBREAK, gv->pages[i].blocks[j].text, 
+			pageRT.bottom += GetTextSize(calcHdc, DT_WORDBREAK, gv->pages[i].blocks[j].text,
 				{ pageRT.left + gv->textOffset, pageRT.top, pageRT.right - gv->textOffset, pageRT.bottom }).cy + gv->boxCy - gv->fontM;
 			gv->pages[i].blocks[j].rt = pageRT;
 			switch (gv->pages[i].blocks[j].style & PB_MASK)
@@ -454,7 +682,7 @@ void DrawHotkey(HDC hdc, Graphics* gdiGraph, BHOTKEY* obj, RECT rt, COLORREF col
 		if (keyCx < obj->fontCy)
 			keyCx = obj->fontCy;
 		rt.right = rt.left + keyCx + obj->voidSize;
-		FillRoundRectangle(gdiGraph, &brush, GDI_RECT(rt), gv->boxCy >> 3);
+		FillRoundRectangle(gdiGraph, &brush, RECT_LTWH(rt), gv->boxCy >> 3);
 		DrawInflateText(hdc, obj->nameArr[i], -1, rt, DT_VCENTER | DT_SINGLELINE | DT_NOCLIP | DT_CENTER, 0, 0);
 		OffsetRect(&rt, keyCx + obj->voidSize + gv->hotkeyOffset, 0);
 	}
@@ -466,7 +694,7 @@ void DrawHotkey(HDC hdc, Graphics* gdiGraph, BHOTKEY* obj, RECT rt, COLORREF col
 void CloseHotkeyWin(void)
 {
 	UnhookWindowsHookEx(gv->kv->hook);
-	gv->mouseID = MOUSE_NULL_ID;
+	ResetMouseID();
 	free(gv->kv->userObj.hk);
 	free(gv->kv);
 	gv->kv = 0;
@@ -508,24 +736,29 @@ LRESULT CALLBACK LLKeyReaction(int nCode, WPARAM wParam, LPARAM lParam)
 	{
 		DWORD vk = ((LPKBDLLHOOKSTRUCT)lParam)->vkCode;
 		Hotkey lastHk = gv->kv->userHk;
+		LRESULT resultVal = gv->isActiveWin ? 1 : CallNextHookEx(NULL, nCode, wParam, lParam);
 		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
 		{
+			if(!gv->isActiveWin)
+				return resultVal;
 			switch (vk)
 			{
-			case VK_ESCAPE:						CloseHotkeyWin();														return 1;
-			case VK_LMENU: case VK_RMENU:       gv->kv->userHk.sys |= MOD_ALT;											break;
-			case VK_LCONTROL: case VK_RCONTROL: gv->kv->userHk.sys |= MOD_CONTROL;										break;
-			case VK_LSHIFT: case VK_RSHIFT:     gv->kv->userHk.sys |= MOD_SHIFT;										break;
-			case VK_LWIN: case VK_RWIN:         gv->kv->userHk.sys |= MOD_WIN;											break;
-			default:                            gv->kv->userHk.main = (byte)vk;											break;
+			case VK_ESCAPE:						CloseHotkeyWin();																return resultVal;
+			case VK_LMENU: case VK_RMENU:       gv->kv->userHk.sys |= MOD_ALT;													break;
+			case VK_LCONTROL: case VK_RCONTROL: gv->kv->userHk.sys |= MOD_CONTROL;												break;
+			case VK_LSHIFT: case VK_RSHIFT:     gv->kv->userHk.sys |= MOD_SHIFT;												break;
+			case VK_LWIN: case VK_RWIN:         gv->kv->userHk.sys |= MOD_WIN;													break;
+			default:                            gv->kv->userHk.main = (byte)vk;													break;
 			}
 			if (lastHk.main == gv->kv->userHk.main && lastHk.sys == gv->kv->userHk.sys)
-				return 1;
-			gv->kv->isFixed = gv->kv->isCanSet = 0;
+				return resultVal;
+			gv->kv->isFixed = 0;
 			if (gv->kv->userHk.main && gv->kv->userHk.sys)
 			{
 				gv->kv->isFixed = TRUE;
-				if (gv->kv->isCanSet = RegisterHotKey(nTray.hWnd, 0, gv->kv->userHk.sys, gv->kv->userHk.main))
+				wchar_t buff[KEY_NAME_SIZE] = { 0 };
+				GetNameByVK(gv->kv->userHk.main, buff);
+				if (gv->kv->isCanSet = (lstrcmpW(buff, L"NULL") && RegisterHotKey(nTray.hWnd, 0, gv->kv->userHk.sys, gv->kv->userHk.main)))
 					UnregisterHotKey(nTray.hWnd, 0);
 			}
 		}
@@ -533,20 +766,20 @@ LRESULT CALLBACK LLKeyReaction(int nCode, WPARAM wParam, LPARAM lParam)
 		{
 			switch (vk)
 			{
-			case VK_LMENU: case VK_RMENU:       gv->kv->userHk.sys ^= MOD_ALT;											break;
-			case VK_LCONTROL: case VK_RCONTROL: gv->kv->userHk.sys ^= MOD_CONTROL;										break;
-			case VK_LSHIFT: case VK_RSHIFT:     gv->kv->userHk.sys ^= MOD_SHIFT;										break;
-			case VK_LWIN: case VK_RWIN:         gv->kv->userHk.sys ^= MOD_WIN;											break;
-			default:							if (vk == gv->kv->userHk.main) gv->kv->userHk.main = 0; else return 1;	break;
+			case VK_LMENU: case VK_RMENU:       gv->kv->userHk.sys &= ~MOD_ALT;													break;
+			case VK_LCONTROL: case VK_RCONTROL: gv->kv->userHk.sys &= ~MOD_CONTROL;												break;
+			case VK_LSHIFT: case VK_RSHIFT:     gv->kv->userHk.sys &= ~MOD_SHIFT;												break;
+			case VK_LWIN: case VK_RWIN:         gv->kv->userHk.sys &= ~MOD_WIN;													break;
+			default:							if (vk == gv->kv->userHk.main) gv->kv->userHk.main = 0; else return resultVal;	break;
 			}
 			if (gv->kv->isFixed)
-				return 1;
+				return resultVal;
 		}
 		*gv->kv->userObj.hk = gv->kv->userHk;
 		SIZE size = CalculateHotkey(&gv->kv->userObj);
 		gv->kv->userObj.keysRt = { 0, 0, size.cx, size.cy };
 		RedrawWinRect(gv->kv->winRt);
-		return 1;
+		return resultVal;
 	}
 	return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
@@ -557,7 +790,9 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 	case WM_CREATE:
 		ALLOC(gv = (GraphVar*)calloc(1, sizeof(GraphVar)));
 		gv->settWin = window;
-		gv->mouseID = MOUSE_NULL_ID;
+		gv->isActiveWin = TRUE;
+		gv->lastDPI = (byte)GetDpiForWindow(window);
+		ResetMouseID();
 		//		Устройство SetPage:
 		//	1. Название страницы
 		//	2. Количество блоков
@@ -577,28 +812,43 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		SetPage(L"Поиск текста в браузере", 3,
 			PBID_DESCRIPTION | PBIDH_STACK, L"Функция отпрвляет выделенный текст как запрос в браузерный поисковик",
 			PBID_HOTKEY | PBIDH_STACK, fileHkSett + LID_TOWEB,
-			PBID_CHECKBOX | PBIDH_CUSTOM, L"Браузер", L"Использовать Яндекс вместо Google", fileBoolSett + BSID_YANDEX, 0);
+			PBID_CHECKBOX | PBIDH_CUSTOM, L"Поисковая система", L"Использовать Яндекс вместо Google", fileBoolSett + BSID_YANDEX_SEARCH, 0);
 		SetPage(L"Открытие текста через переводчик", 3,
 			PBID_DESCRIPTION | PBIDH_STACK, L"Функция отпрвляет выделенный текст как запрос в браузерный переводчик",
 			PBID_HOTKEY | PBIDH_STACK, fileHkSett + LID_TRANSLATE,
-			PBID_CHECKBOX | PBIDH_CUSTOM, L"Браузер", L"Использовать Яндекс вместо Google", fileBoolSett + BSID_YANDEX, 0);
+			PBID_CHECKBOX | PBIDH_CUSTOM, L"Переводчик", L"Использовать Яндекс вместо Google", fileBoolSett + BSID_YANDEX_TRANSLATE, 0);
 		gv->font = CreateFontW(0, 0, 0, 0, FW_NORMAL, 0, 0, 0, RUSSIAN_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
 			PROOF_QUALITY, DEFAULT_PITCH, L"Bahnschrift");
-		{
-			RECT winRT;
-			GetWindowRect(window, &winRT);
-			AdjustWindowRect(&winRT, WS_CAPTION | WS_SYSMENU | WS_VISIBLE, 0);
-			SetWindowPos(window, 0, winRT.left, winRT.top, winRT.right - winRT.left, winRT.bottom - winRT.top,
-				SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
-		}
+		RECT winRT;
+		GetWindowRect(window, &winRT);
+		AdjustRectByDPI(&winRT, gv->lastDPI, USER_DEFAULT_SCREEN_DPI);
+		AdjustWindowRect(&winRT, WS_CAPTION, 0);
+		SetWindowPos(window, 0, RECT_LTWH(winRT), SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW);
 		CalculatePaintComponents();
 		SetForegroundWindow(window);
 		return 0;
+	case WM_NCCREATE:
+		EnableNonClientDpiScaling(window);
+		break;
+	case WM_DPICHANGED:
+	{
+		byte dpi = (byte)LOWORD(wParam);
+		RECT newWinRT;
+		GetWindowRect(window, &newWinRT);
+		AntiAdjustWindowRect(&newWinRT);
+		AdjustRectByDPI(&newWinRT, dpi, gv->lastDPI);
+		gv->lastDPI = dpi;
+		AdjustWindowRect(&newWinRT, WS_CAPTION, 0);
+		SetWindowPos(window, 0, RECT_LTWH(newWinRT), SWP_NOZORDER | SWP_NOACTIVATE);
+		CalculatePaintComponents();
+		InvalidateRect(gv->settWin, 0, TRUE);
+		return 0;
+	}
 	case WM_PAINT:
 	{
 		RECT clientRT;
 		GetClientRect(window, &clientRT);
-		COLORREF colrWhite = RGB(255, 242, 229), colrBlack = RGB(34, 30, 26), colrGray = RGB(61, 53, 46), 
+		COLORREF colrWhite = RGB(255, 242, 229), colrBlack = RGB(34, 30, 26), colrGray = RGB(61, 53, 46),
 			colrFunction = BetweenColors(RGB(248, 54, 1), RGB(249, 204, 34), gv->pagesCount, gv->optID);
 		USHORT lineWidth = gv->boxCy >> 3;
 		Pen pen{ ColorrefToColor(colrFunction), (REAL)lineWidth };
@@ -631,7 +881,7 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		{
 			if (i == gv->mouseID || i == gv->optID)
 			{
-				FillRoundRectangle(&gdiGraph, &brush, GDI_RECT(gv->pages[i].btnRt), gv->boxCy >> 2);
+				FillRoundRectangle(&gdiGraph, &brush, RECT_LTWH(gv->pages[i].btnRt), gv->boxCy >> 2);
 				if (i == gv->optID)
 					gdiGraph.DrawLine(&pen, (int)gv->pages[i].btnRt.left + (lineWidth >> 1), (int)gv->pages[i].btnRt.top + (gv->boxCy >> 2),
 						(int)gv->pages[i].btnRt.left + (lineWidth >> 1), (int)gv->pages[i].btnRt.bottom - (gv->boxCy >> 2));
@@ -644,7 +894,7 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		gdiGraph.DrawLine(&pen, (int)boxRT.left, (int)boxRT.top + boxRT.bottom >> 1, (int)boxRT.right, (int)boxRT.top + boxRT.bottom >> 1);
 		// Отрисовка копки гитхаба
 		if (gv->mouseID == MOUSE_GH_ID)
-			FillRoundRectangle(&gdiGraph, &brush, GDI_RECT(gv->githubRt), gv->boxCy >> 2);
+			FillRoundRectangle(&gdiGraph, &brush, RECT_LTWH(gv->githubRt), gv->boxCy >> 2);
 		DrawInflateText(hdc, L"Страница приложения", -1, gv->githubRt, DT_VCENTER | DT_SINGLELINE | DT_NOCLIP, -gv->textOffset, 0);
 
 		//  ПРАВАЯ ЧАСТЬ
@@ -666,7 +916,7 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 				SelectFontOnce(hdc, &gv->font, 0, FW_NORMAL);
 			}
 			//  Блок + текст
-			FillRoundRectangle(&gdiGraph, &brush, GDI_RECT(boxRT), gv->boxCy >> 3);
+			FillRoundRectangle(&gdiGraph, &brush, RECT_LTWH(boxRT), gv->boxCy >> 3);
 			DrawInflateText(hdc, gv->pages[gv->optID].blocks[i].text, -1, boxRT, DT_WORDBREAK, -gv->textOffset, -gv->boxOffset);
 			//  Различные реализации при разных стилях
 			switch (gv->pages[gv->optID].blocks[i].style & PB_MASK)
@@ -689,11 +939,11 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 				boxRT = obj->cBoxRt;
 				int cBoxCy = boxRT.bottom - boxRT.top;
 				brush.SetColor(ColorrefToColor(BetweenColors(colrOnOff.bg, colrWhite, COLR_CHOOSE_SIZE, i + gv->pagesCount == gv->mouseID)));
-				FillRoundRectangle(&gdiGraph, &brush, GDI_RECT(boxRT), cBoxCy);
+				FillRoundRectangle(&gdiGraph, &brush, RECT_LTWH(boxRT), cBoxCy);
 				isOn ? (boxRT.left += cBoxCy) : (boxRT.right -= cBoxCy);
 				InflateRect(&boxRT, -(cBoxCy >> 2), -(cBoxCy >> 2));
 				brush.SetColor(ColorrefToColor(colrOnOff.main));
-				gdiGraph.FillEllipse(&brush, GDI_RECT(boxRT));
+				gdiGraph.FillEllipse(&brush, RECT_LTWH(boxRT));
 				brush.SetColor(ColorrefToColor(colrGray));
 				break;
 			}
@@ -711,7 +961,7 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 			gdiGraph.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
 			//	Рисование окна хоткея
 			brush.SetColor(ColorrefToColor(colrGray));
-			FillRoundRectangle(&gdiGraph, &brush, GDI_RECT(gv->kv->winRt), gv->boxCy >> 1);
+			FillRoundRectangle(&gdiGraph, &brush, RECT_LTWH(gv->kv->winRt), gv->boxCy >> 1);
 			//	Отрисовка заголовка
 			int partCy = (gv->kv->winRt.bottom - gv->kv->winRt.top) / 4;
 			SelectFontOnce(hdc, &gv->font, gv->fontL, FW_BOLD);
@@ -731,23 +981,23 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 			DrawInflateText(hdc, postScript, -1, boxRT, DT_WORDBREAK, -gv->textOffset, 0);
 			hkBoxRt.bottom = boxRT.top;
 			//	Отрисовка хоткея
-			BoxColors hotkeyColr = (gv->kv->isFixed ? (gv->kv->isCanSet ? BoxColors{ colrBlack, colrFunction } : BoxColors{ colrFunction, colrBlack }) : 
+			BoxColors hotkeyColr = (gv->kv->isFixed ? (gv->kv->isCanSet ? BoxColors{ colrBlack, colrFunction } : BoxColors{ colrFunction, colrBlack }) :
 				(gv->kv->userObj.keysCount ? BoxColors{ colrBlack, colrWhite } : BoxColors{ colrWhite, colrBlack }));
 			DrawHotkey(hdc, &gdiGraph, &gv->kv->userObj, hkBoxRt, hotkeyColr.main, hotkeyColr.bg);
 			//	Вывод кнопок
 			const wchar_t* bntNames[HB_SIZE] = { L"Сохранить", L"Сброс", L"Отмена" };
 			SelectFontOnce(hdc, &gv->font, gv->fontM, FW_BOLD);
-			hotkeyColr = gv->kv->isCanSet ? BoxColors{ colrBlack, BetweenColors(colrFunction, colrWhite, COLR_CHOOSE_SIZE, !gv->mouseID)} :
+			hotkeyColr = gv->kv->isCanSet ? BoxColors{ colrBlack, BetweenColors(colrFunction, colrWhite, COLR_CHOOSE_SIZE, !gv->mouseID) } :
 				BoxColors{ colrGray, colrBlack };
 			SetTextColor(hdc, hotkeyColr.main);
 			brush.SetColor(ColorrefToColor(hotkeyColr.bg));
-			FillRoundRectangle(&gdiGraph, &brush, GDI_RECT(gv->kv->btnArrRt[0]), gv->boxCy >> 2);
+			FillRoundRectangle(&gdiGraph, &brush, RECT_LTWH(gv->kv->btnArrRt[0]), gv->boxCy >> 2);
 			DrawInflateText(hdc, bntNames[0], -1, gv->kv->btnArrRt[0], DT_VCENTER | DT_SINGLELINE | DT_NOCLIP | DT_CENTER, 0, 0);
 			SetTextColor(hdc, colrWhite);
 			for (byte i = 1; i != HB_SIZE; i++)
 			{
 				brush.SetColor(ColorrefToColor(BetweenColors(colrBlack, colrWhite, COLR_CHOOSE_SIZE, i == gv->mouseID)));
-				FillRoundRectangle(&gdiGraph, &brush, GDI_RECT(gv->kv->btnArrRt[i]), gv->boxCy >> 2);
+				FillRoundRectangle(&gdiGraph, &brush, RECT_LTWH(gv->kv->btnArrRt[i]), gv->boxCy >> 2);
 				DrawInflateText(hdc, bntNames[i], -1, gv->kv->btnArrRt[i], DT_VCENTER | DT_SINGLELINE | DT_NOCLIP | DT_CENTER, 0, 0);
 			}
 		}
@@ -786,11 +1036,16 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		}
 		return 0;
 	case WM_LBUTTONDOWN:
+		gv->clickID = gv->mouseID;
+		return 0;
+	case WM_LBUTTONUP:
 	{
+		if (gv->clickID != gv->mouseID)
+			return 0;
 		POINT mousePt;
 		GetCursorPos(&mousePt);
 		ScreenToClient(window, &mousePt);
-		if(!gv->kv)
+		if (!gv->kv)
 			switch (gv->mouseID)
 			{
 			case MOUSE_NULL_ID: break;
@@ -799,6 +1054,7 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 				if (gv->mouseID < gv->pagesCount)
 				{
 					gv->optID = gv->mouseID;
+					SetCursor((HCURSOR)LoadImageW(0, IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED));
 					InvalidateRect(window, 0, TRUE);
 				}
 				else
@@ -811,7 +1067,7 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 						BHOTKEY* obj = (BHOTKEY*)gv->pages[gv->optID].blocks[blockID].obj;
 						if (PtInRect(&obj->keysRt, mousePt))
 						{
-							gv->mouseID = MOUSE_NULL_ID;
+							ResetMouseID();
 							ALLOC(gv->kv = (KeyVar*)calloc(1, sizeof(KeyVar)));
 							gv->kv->hook = SetWindowsHookExW(WH_KEYBOARD_LL, LLKeyReaction, 0, 0);
 							gv->kv->isFixed = TRUE;
@@ -832,9 +1088,9 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 								gv->kv->btnArrRt[i] = gv->kv->btnArrRt[i - 1];
 								OffsetRect(gv->kv->btnArrRt + i, gv->hotkeyOffset + btnPartCx, 0);
 							}
-							InvalidateRect(gv->settWin, 0, TRUE);	
+							InvalidateRect(gv->settWin, 0, TRUE);
 						}
-						return 0;
+						break;
 					}
 					case PBID_CHECKBOX:
 					{
@@ -847,7 +1103,7 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 								obj->cBoxAction();
 							RedrawWinRect(obj->cBoxRt);
 						}
-						return 0;
+						break;
 					}
 					default: break;
 					}
@@ -864,19 +1120,31 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 			}
 		return 0;
 	}
-	case WM_MOUSEMOVE: case WM_ACTIVATE:
+	case WM_ACTIVATE:
+		if (gv->kv)
+			gv->isActiveWin = LOWORD(wParam);
+		[[fallthrough]];
+	case WM_SETCURSOR:
 	{
 		POINT mousePt;
 		GetCursorPos(&mousePt);
 		ScreenToClient(window, &mousePt);
 		char saveChoiseID = gv->mouseID;
 		gv->mouseID = MOUSE_NULL_ID;
-		for (char i = MOUSE_GH_ID; i != gv->pagesCount + gv->pages[gv->optID].blocksCount; i++)
+		char startID = MOUSE_GH_ID, endID = gv->pagesCount + (char)gv->pages[gv->optID].blocksCount;
+		if (gv->kv)
+		{
+			startID = 0;
+			endID = HB_SIZE;
+		}
+		for (char i = startID; i != endID; i++)
 			if (i != MOUSE_NULL_ID && PtInRect(GetRtByMouseID(i), mousePt))
 			{
 				gv->mouseID = i;
 				break;
 			}
+		SetCursor((HCURSOR)LoadImageW(0, gv->mouseID == MOUSE_NULL_ID || gv->mouseID == gv->optID ? IDC_ARROW : IDC_HAND,
+			IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED));
 		if (gv->mouseID != saveChoiseID)
 		{
 			if (gv->mouseID != MOUSE_NULL_ID)
@@ -932,24 +1200,31 @@ LRESULT CALLBACK SettReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 	return DefWindowProcW(window, message, wParam, lParam);
 }
 /////////////////////////////////////////////////////////////////////////////////////
+void SetBoolByAttribute(const wchar_t* cmdLine, const wchar_t* attribute, byte boolID)
+{
+	if (!lstrcmpW(cmdLine, attribute))
+		tempSett[boolID] = TRUE;
+}
 bool IsNewVersionExist(void)
 {
+	bool result = 0;
 	HINTERNET hInterOpen = InternetOpenW(L"fmt", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	if (!hInterOpen)
-		return false;
+		return result;
 	HINTERNET hInterconnect = InternetOpenUrlW(hInterOpen,
-		L"https://api.github.com/repos/ParadiseMan900/Fix-my-text/tags", NULL, 0, 0, 0);
+		L"https://api.github.com/repos/ParadiseMan900/Fix-my-text/tags?per_page=1", NULL, 0, 0, 0);
 	if (!hInterconnect)
-		return false;
+		return result;
 	DWORD dataSize = 0;
 	InternetQueryDataAvailable(hInterconnect, &dataSize, 0, 0);
 	char* str = (char*)calloc((size_t)dataSize + 1, sizeof(char));
 	if (!str)
-		return false;
+		return result;
 	InternetReadFile(hInterconnect, str, dataSize, &dataSize);
 	InternetCloseHandle(hInterconnect);
 	InternetCloseHandle(hInterOpen);
-	bool result = false;
+	if (*str == '{')
+		return result;
 	size_t verSize = 0;
 	while (str[VERSIONID + verSize] != '\"')
 		verSize++;
@@ -963,7 +1238,6 @@ bool IsNewVersionExist(void)
 			result = TRUE;
 			Shell_NotifyIconW(NIM_MODIFY, &nTray);
 		}
-
 		free(version);
 	}
 	free(str);
@@ -1010,8 +1284,8 @@ void AddDebugConsole(void)
 	SetConsoleOutputCP(1251);
 	setlocale(LC_ALL, "");
 	SetConsoleCtrlHandler(0, TRUE);
-	HMENU hMenu = GetSystemMenu(consoleWin, false);
-	if (hMenu) 
+	HMENU hMenu = GetSystemMenu(consoleWin, 0);
+	if (hMenu)
 		DeleteMenu(hMenu, SC_CLOSE, MF_BYCOMMAND);
 }
 void OpenSettings(void)
@@ -1021,40 +1295,50 @@ void OpenSettings(void)
 			GetSystemMetrics(SM_CXSCREEN) - CX >> 1, GetSystemMetrics(SM_CYSCREEN) - CY >> 1, CX, CY, 0, 0, histance, 0);
 	else SetForegroundWindow(gv->settWin);
 }
+void TimerWaitCycle(MSG* msg, byte timerID, byte boolID)
+{
+	SetTimer(nTray.hWnd, timerID, USER_TIMER_MINIMUM, NULL);
+	tempSett[boolID] = TRUE;
+	while (tempSett[boolID])
+		if (GetMessageW(msg, NULL, 0, 0))
+			DispatchMessageW(msg);
+	KillTimer(nTray.hWnd, timerID);
+}
+void AddMenuButton(HMENU hMenu, UINT flags, byte id, const wchar_t* name, byte bmpID)
+{
+	AppendMenuW(hMenu, flags, id, name);
+	if(bmpID)
+		SetMenuItemBitmaps(hMenu, id, MF_BYCOMMAND,	(HBITMAP)LoadImageW(histance, MAKEINTRESOURCEW(bmpID), 0, 0, 0, LR_SHARED), 0);
+}
 LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
 	{
 	case WM_CREATE:
 		for (byte i = 0; i != sizeof(fileHkSett) / sizeof(*fileHkSett); i++)
-			RegisterHotKey(window, i+1, fileHkSett[i].sys, fileHkSett[i].main);
+			RegisterHotKey(window, i + 1, fileHkSett[i].sys, fileHkSett[i].main);
 		break;
 	case WM_TIMER:
 		switch (wParam)
 		{
 		case TID_PROBLEM:
-			if (GetKeyState(VK_LWIN) >= 0 && GetKeyState(VK_RWIN) >= 0
-				&& GetKeyState(VK_MENU) >= 0 && GetKeyState(VK_CONTROL) >= 0)
-					tempSett[BSID_PROBLEM_KEYS] = false;
+			for (byte i = 0; i != 255; i++)
+				if (GetKeyState(i) < 0)
+				{
+					tempSett[BSID_PROBLEM_KEYS] = 0;
+					break;
+				}
 			break;
 		case TID_CTRLC:
 		{
 			static unsigned char iterNULL = 0;
 			if (++iterNULL == 25)	//25 итераций проверки
 			{
-				tempSett[BSID_WAITING_CLIPBOARD] = false;
+				tempSett[BSID_WAITING_CLIPBOARD] = 0;
 				iterNULL = 0;
 			}
 			break;
 		}
-		case TID_CTRLV:
-			for (unsigned char i = 0; i < 255; i++) 
-				if (GetKeyState(i) < 0)
-				{
-					tempSett[BSID_WAITING_INPUT] = false;
-					break;
-				}
-			break;
 		case TID_NEWVER:
 			if (tempSett[BSID_NEW_VERSION] = IsNewVersionExist())
 				KillTimer(window, TID_NEWVER);
@@ -1064,41 +1348,33 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		}
 		break;
 	case WM_CLIPBOARDUPDATE:
-		tempSett[BSID_WAITING_CLIPBOARD] = false;
+		tempSett[BSID_WAITING_CLIPBOARD] = 0;
 		break;
 	case WM_USER:
 		switch (lParam)
 		{
-		case WM_RBUTTONUP: 
+		case WM_RBUTTONUP:
 		{
 			//Создание менюшки с кнопками
 			HMENU hMenu = CreatePopupMenu();
 			if (tempSett[BSID_NEW_VERSION])
 			{
-				AppendMenuW(hMenu, 0, IR_NEWVER, L"Доступна новая версия!");
-				AppendMenuW(hMenu, MF_SEPARATOR, 0, 0);
+				AddMenuButton(hMenu, 0, IR_NEWVER, L"Доступна новая версия!", 0);
+				AddMenuButton(hMenu, MF_SEPARATOR, 0, 0, 0);
 			}
-			AppendMenuW(hMenu, 0, IR_SETT, L"Настройки");
-			SetMenuItemBitmaps(hMenu, IR_SETT, MF_BYCOMMAND,
-				(HBITMAP)LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP1), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
-			AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+			AddMenuButton(hMenu, 0, IR_SETT, L"Настройки", IDB_BITMAP1);
+			AddMenuButton(hMenu, MF_SEPARATOR, 0, 0, 0);
 			if (tempSett[BSID_DEBUG_MODE])
 			{
-				AppendMenuW(hMenu, tempSett[BSID_DEBUG_VISIBLE] ? MF_CHECKED : MF_UNCHECKED, IR_HIDESHOW,
-					L"Режим разработчика");
-				AppendMenuW(hMenu, MF_SEPARATOR, 0, 0);
-
-				SetMenuItemBitmaps(hMenu, IR_HIDESHOW, MF_BYCOMMAND,
-					(HBITMAP)LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP3), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
+				AddMenuButton(hMenu, tempSett[BSID_DEBUG_VISIBLE] ? MF_CHECKED : MF_UNCHECKED, IR_HIDESHOW,	L"Режим отладки", IDB_BITMAP3);
+				AddMenuButton(hMenu, MF_SEPARATOR, 0, 0, 0);
 			}
-			AppendMenuW(hMenu, 0, IR_EXIT, L"Выход");
-			SetMenuItemBitmaps(hMenu, IR_EXIT, MF_BYCOMMAND,
-				(HBITMAP)LoadImageW(histance, MAKEINTRESOURCEW(IDB_BITMAP2), IMAGE_BITMAP, 0, 0, LR_SHARED), 0);
-
+			AddMenuButton(hMenu, 0, IR_EXIT, L"Выход", IDB_BITMAP2);
+			//Вывод меню
 			POINT pt;
 			GetCursorPos(&pt);
 			SetForegroundWindow(window);
-			TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_RIGHTBUTTON, pt.x, pt.y, 0, window, 0);
+			TrackPopupMenuEx(hMenu, TPM_BOTTOMALIGN | TPM_CENTERALIGN, pt.x, pt.y, window, 0);
 			DestroyMenu(hMenu);
 			break;
 		}
@@ -1132,7 +1408,7 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		case IR_EXIT:
 			for (byte i = 0; i != sizeof(fileHkSett) / sizeof(*fileHkSett); i++)
 				UnregisterHotKey(window, i + 1);
-			if(gv)
+			if (gv)
 				SendMessageW(gv->settWin, WM_CLOSE, 0, 0);
 			PostQuitMessage(0);
 			break;
@@ -1147,196 +1423,6 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		break;
 	}
 	return DefWindowProcW(window, message, wParam, lParam);
-}
-/////////////////////////////////////////////////////////////////////////////////////
-void PrintStrData(StrData* data, const char* msg)
-{
-	if (!consoleWin)
-		return;
-	ConsColor(SC_RED);
-	printf("%s[%llu] -> ", msg, data->strSize);
-	switch (data->format)
-	{
-	case CF_UNICODETEXT:
-		ConsColor(SC_WHITE);
-		wprintf(L"\"%s\"\n", data->str);
-		break;
-	case CF_DIB:
-		ConsColor(SC_SKY);
-		printf("* PICTURE / КАРТИНКА *\n");
-		ConsColor(SC_WHITE);
-		break;
-	default:
-		ConsColor(SC_NULL);
-		printf("|| NULL ||\n");
-		ConsColor(SC_WHITE);
-		break;
-	}
-}
-StrData GetBufer(void)
-{
-	StrData data;
-	ZeroMemory(&data, sizeof(StrData));
-	while (!OpenClipboard(0))
-		Sleep(USER_TIMER_MINIMUM);
-	LogMsg("Call GetBufer", SC_YELLOW);
-	if (!IsClipboardFormatAvailable(data.format = CF_UNICODETEXT)
-		&& !IsClipboardFormatAvailable(data.format = CF_DIB))
-	{
-		CloseClipboard();
-		data.format = 0;
-		return data;
-	}
-	wchar_t* clipData = (wchar_t*)GetClipboardData(data.format);
-	if (data.format == CF_UNICODETEXT)
-		data.strSize = wcslen(clipData) + 1;
-	data.byteSize = GlobalSize(clipData);
-	data.str = (wchar_t*)malloc(data.byteSize);
-	if (data.str)
-		memcpy(data.str, clipData, data.byteSize);
-	EmptyClipboard();
-	CloseClipboard();
-	return data;
-}
-void SetBufer(StrData* data)
-{
-	while (!OpenClipboard(0))
-		Sleep(USER_TIMER_MINIMUM);
-	EmptyClipboard();
-	if (data->format)
-	{
-		HANDLE clipData = GlobalAlloc(GMEM_FIXED, data->byteSize);
-		if (clipData)
-			memcpy(clipData, data->str, data->byteSize);
-		SetClipboardData(data->format, clipData);
-		free(data->str);
-		ZeroMemory(data, sizeof(StrData));
-	}
-	CloseClipboard();
-	LogMsg("Call SetBufer", SC_YELLOW);
-}
-wchar_t LUp(wchar_t letter)
-{
-	if ((letter >= L'a' && letter <= L'z')
-		|| (letter >= L'а' && letter <= L'я'))
-		letter -= CASE_DIFFERENCE;
-	if (letter == L'ё')
-		letter = L'Ё';
-	return letter;
-}
-wchar_t LDown(wchar_t letter)
-{
-	if ((letter >= L'A' && letter <= L'Z')
-		|| (letter >= L'А' && letter <= L'Я'))
-		letter += CASE_DIFFERENCE;
-	if (letter == L'Ё')
-		letter = L'ё';
-	return letter;
-}
-bool LIsCharInTheLine(const wchar_t* str, size_t strSize, wchar_t wchar)
-{
-	for (size_t i = 0; i < strSize; i++)
-		if (str[i] == wchar)
-			return TRUE;
-	return false;
-}
-void LStrToInet(StrData* opt, const wchar_t* link)
-{
-	size_t linkSize = wcslen(link) + opt->strSize + 1;
-	wchar_t* fullLink = (wchar_t*)calloc(linkSize, sizeof(wchar_t));
-	if (fullLink)
-	{
-		wcscpy_s(fullLink, linkSize, link);
-		wcscat_s(fullLink, linkSize, opt->str);
-		ShellExecuteW(0, 0, fullLink, 0, 0, 0);
-		free(fullLink);
-	}
-}
-void LogicSwitch(StrData* opt, unsigned switcher)
-{
-	switch (switcher)
-	{
-	case LID_SWAP:
-	{
-		const wchar_t* engChars = L"`~@#$^&qQwWeErRtTyYuUiIoOpP[{]}|aAsSdDfFgGhHjJkKlL;:'\"zZxXcCvVbBnNmM,<.>/?";
-		const wchar_t* rusChars = L"ёЁ\"№;:?йЙцЦуУкКеЕнНгГшШщЩзЗхХъЪ/фФыЫвВаАпПрРоОлЛдДжЖэЭяЯчЧсСмМиИтТьЬбБюЮ.,";
-		const wchar_t* sameChars = L"1234567890!%*()-_=+\\\";:?.,/";
-		size_t swapCharsSize = wcslen(engChars);
-		size_t sameCharsSize = wcslen(sameChars);
-		unsigned engCount;
-		unsigned rusCount;
-		wchar_t* oneWord;
-		size_t wordLen;
-		size_t lastID = 0;
-		const wchar_t* tempP;
-		const wchar_t* tempP2;
-		for (size_t i = 0; i < opt->strSize; i++)
-			if (opt->str[i] == L' ' || opt->str[i] == L'\t' || opt->str[i] == L'\n' || opt->str[i] == L'\0')
-			{
-				wordLen = (size_t)i - lastID;
-				oneWord = opt->str + lastID;
-				engCount = 0;
-				rusCount = 0;
-				for (size_t j = 0; j < wordLen; j++)
-				{
-					if (LIsCharInTheLine(sameChars, sameCharsSize, oneWord[j]))
-						continue;
-					if (LIsCharInTheLine(engChars, swapCharsSize, oneWord[j]))
-						engCount++;
-					else rusCount++;
-				}
-				tempP = tempP2 = engChars;
-				(engCount >= rusCount ? tempP2 : tempP) = rusChars;
-				for (size_t j = 0; j < wordLen; j++)
-					for (size_t k = 0; k < swapCharsSize; k++)
-						if (tempP[k] == oneWord[j])
-						{
-							oneWord[j] = tempP2[k];
-							break;
-						}
-				lastID = i + 1;
-			}
-		LogMsg("Смена языка выполнена", SC_GREEN);
-		break;
-	}
-	case LID_UPDOWN:
-	{
-		wchar_t upChar;
-		for (size_t i = 0; i < opt->strSize - 1; i++)
-		{
-			upChar = LUp(opt->str[i]);
-			opt->str[i] = opt->str[i] == upChar ? LDown(opt->str[i]) : upChar;
-		}
-		LogMsg("Смена регистра выполнена", SC_GREEN);
-		break;
-	}
-	case LID_TOWEB:
-		LStrToInet(opt, fileBoolSett[BSID_YANDEX] ? L"https://ya.ru?q=" : L"https://www.google.com/search?q=");
-		LogMsg("Поиск по тексту выполнен", SC_GREEN);
-		break;
-	case LID_TRANSLATE:
-		LStrToInet(opt, fileBoolSett[BSID_YANDEX] ? L"https://translate.yandex.ru/?source_lang=en&target_lang=ru&text=" : 
-			L"https://translate.google.ru/?sl=auto&tl=ru&text=");
-		LogMsg("Перевод текеста выполнен", SC_GREEN);
-		break;
-	default:
-		return;
-	}
-}
-void EmulateACombinationWithCtrl(wchar_t key)
-{
-	INPUT input[4];
-	ZeroMemory(input, sizeof(input));
-	input[0].ki.wVk = VK_CONTROL;
-	input[1].ki.wVk = key;
-	input[2].ki.wVk = key;
-	input[3].ki.wVk = VK_CONTROL;
-	input[2].ki.dwFlags = KEYEVENTF_KEYUP;
-	input[3].ki.dwFlags = KEYEVENTF_KEYUP;
-	for (unsigned i = 0; i < 4; i++)
-		input[i].type = INPUT_KEYBOARD;
-	if (SendInput(4, input, sizeof(INPUT)) != 4)
-		LogMsg("Emulate ERROR", SC_GREEN);
 }
 /////////////////////////////////////////////////////////////////////////////////////
 int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCHAR* cmdLine, _In_ int cmdShow)
@@ -1370,7 +1456,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCH
 					break;
 				fileHkSett[i].main = fileVal & 0xFF;
 				fileHkSett[i].sys = (fileVal >> 8) & 0xFF;
-			}	
+			}
 			scanCode = fscanf_s(fSettings, "%llu", &fileVal);
 			if (scanCode && scanCode != EOF)
 				for (byte i = 0; i != sizeof(fileBoolSett) / sizeof(*fileBoolSett); i++)
@@ -1385,39 +1471,41 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCH
 		wchar_t** cmdArgvLine = CommandLineToArgvW(cmdLine, &argsCount);
 		if (cmdArgvLine)
 			for (int i = 0; i != argsCount; i++)
-				if (!lstrcmpW(cmdArgvLine[i], L"debug"))
-				{
-					tempSett[BSID_DEBUG_MODE] = TRUE;
-					break;
-				}
+			{
+				SetBoolByAttribute(cmdArgvLine[i], L"debug", BSID_DEBUG_MODE);
+				SetBoolByAttribute(cmdArgvLine[i], L"spin", BSID_PAGES_SPIN);
+			}
 	}
 	////	Поиск, создание и регестрация окна, настройки
 	histance = hInst;
 	{
 		////	Регистрация классов
-		WNDCLASS wc, wc2;
+		WNDCLASS wc;
+		WNDCLASSEX wc2;
 		ZeroMemory(&wc, sizeof(wc));
 		ZeroMemory(&wc2, sizeof(wc2));
 		wc.lpfnWndProc = IconReaction;
 		wc.hInstance = histance;
 		wc.lpszClassName = WCN_ICON;
+		wc2.cbSize = sizeof(wc2);
 		wc2.lpfnWndProc = SettReaction;
 		wc2.hInstance = histance;
 		wc2.lpszClassName = WCN_SETT;
-		wc2.hIcon = (HICON)LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+		wc2.hIcon = (HICON)LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 256, 256, 0);
+		wc2.hIconSm = (HICON)LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
 		RegisterClassW(&wc);
-		RegisterClassW(&wc2);
+		RegisterClassExW(&wc2);
 		////	Создание и добавление окна (в виде иконки) в трей
 		ZeroMemory(&nTray, sizeof(nTray));
 		nTray.cbSize = sizeof(nTray);
-		nTray.hWnd = CreateWindowW(wc.lpszClassName, wc.lpszClassName, 0, 0, 0, 0, 0, 0, 0, wc.hInstance, 0);
+		nTray.hWnd = CreateWindowW(wc.lpszClassName, wc.lpszClassName, 0, 0, 0, 0, 0, 0, 0, histance, 0);
 		nTray.uVersion = NOTIFYICON_VERSION;
 		nTray.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
 		nTray.uCallbackMessage = WM_USER;
 		//IDI_ICON1 - ID Иконки из файла ресурсов.
-		nTray.hIcon = (HICON)LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+		nTray.hIcon = (HICON)LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
 		lstrcpyW(nTray.szTip, L"Fix my text");
-		nTray.hBalloonIcon = (HICON)LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, 0, 0, 0);
+		nTray.hBalloonIcon = (HICON)LoadImageW(histance, MAKEINTRESOURCEW(IDI_ICON2), IMAGE_ICON, 0, 0, 0);
 		nTray.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON | NIIF_RESPECT_QUIET_TIME;
 		lstrcpyW(nTray.szInfoTitle, L"Появилась новая версия приложения!");
 		lstrcpyW(nTray.szInfo, L"Нажмите на иконку, чтобы перейти на страницу с новой версией приложения");
@@ -1448,21 +1536,11 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCH
 		conservation = GetBufer();
 		PrintStrData(&conservation, VAR_NAME(conservation));
 		////	Проблемные кнопки, мешающие копированию
-		SetTimer(nTray.hWnd, TID_PROBLEM, USER_TIMER_MINIMUM, NULL);
-		tempSett[BSID_PROBLEM_KEYS] = TRUE;
-		while (tempSett[BSID_PROBLEM_KEYS])
-			if (GetMessageW(&msg, NULL, 0, 0))
-				DispatchMessageW(&msg);
-		KillTimer(nTray.hWnd, TID_PROBLEM);
+		TimerWaitCycle(&msg, TID_PROBLEM, BSID_PROBLEM_KEYS);
 		////	Эмуляция Ctrl + C
 		AddClipboardFormatListener(nTray.hWnd);
-		SetTimer(nTray.hWnd, TID_CTRLC, USER_TIMER_MINIMUM, NULL);
-		tempSett[BSID_WAITING_CLIPBOARD] = TRUE;
-		EmulateACombinationWithCtrl('C');
-		while (tempSett[BSID_WAITING_CLIPBOARD])
-			if (GetMessageW(&msg, NULL, 0, 0))
-				DispatchMessageW(&msg);
-		KillTimer(nTray.hWnd, TID_CTRLC);
+		EmulateCombination(2, VK_CONTROL, 'C');
+		TimerWaitCycle(&msg, TID_CTRLC, BSID_WAITING_CLIPBOARD);
 		RemoveClipboardFormatListener(nTray.hWnd);
 		////	Получение SELECTED
 		selected = GetBufer();
@@ -1487,28 +1565,23 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCH
 			PrintStrData(&selected, VAR_NAME(selected));
 			SetBufer(&selected);
 			////	Эмуляция Ctrl + V
-			EmulateACombinationWithCtrl('V');
-			////	Смена языка (при включеной галочки)
-			if (fileBoolSett[BSID_CHANGE_LANG] && swither == LID_SWAP)
-				PostMessageW(GetForegroundWindow(), WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_FORWARD, 0);
-			else if (fileBoolSett[BSID_CHANGE_CAPS] && swither == LID_UPDOWN)
+			EmulateCombination(2, VK_CONTROL, 'V');
+			////	Смена (при включеной галочки)
+			switch (swither)
 			{
-				INPUT input[2];
-				ZeroMemory(input, sizeof(input));
-				input[0].type = INPUT_KEYBOARD;
-				input[0].ki.wVk = VK_CAPITAL;
-				input[1].type = INPUT_KEYBOARD;
-				input[1].ki.wVk = VK_CAPITAL;
-				input[1].ki.dwFlags = KEYEVENTF_KEYUP;
-				SendInput(2, input, sizeof(INPUT));
+			case LID_SWAP:
+				if (fileBoolSett[BSID_CHANGE_LANG])
+					PostMessageW(GetForegroundWindow(), WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_FORWARD, 0);
+				break;
+			case LID_UPDOWN:
+				if (fileBoolSett[BSID_CHANGE_CAPS])
+					EmulateCombination(1, VK_CAPITAL);
+				break;
+			default:
+				break;
 			}
 			////	Ожидания действий для корректной вставки CONSERVATION
-			SetTimer(nTray.hWnd, TID_CTRLV, USER_TIMER_MINIMUM, NULL);
-			tempSett[BSID_WAITING_INPUT] = TRUE;
-			while (tempSett[BSID_WAITING_INPUT])
-				if (GetMessageW(&msg, NULL, 0, 0))
-					DispatchMessageW(&msg);
-			KillTimer(nTray.hWnd, TID_CTRLV);
+			TimerWaitCycle(&msg, TID_PROBLEM, BSID_PROBLEM_KEYS);
 		}
 		////	Вставка CONSERVATION
 		SetBufer(&conservation);
