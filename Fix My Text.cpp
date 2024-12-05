@@ -752,7 +752,7 @@ LRESULT CALLBACK LLKeyReaction(int nCode, WPARAM wParam, LPARAM lParam)
 			}
 			if (lastHk.main == gv->kv->userHk.main && lastHk.sys == gv->kv->userHk.sys)
 				return resultVal;
-			gv->kv->isFixed = 0;
+			gv->kv->isFixed = gv->kv->isCanSet = 0;
 			if (gv->kv->userHk.main && gv->kv->userHk.sys)
 			{
 				gv->kv->isFixed = TRUE;
