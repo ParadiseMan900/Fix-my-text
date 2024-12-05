@@ -1324,10 +1324,8 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		case TID_PROBLEM:
 			for (byte i = 0; i != 255; i++)
 				if (GetKeyState(i) < 0)
-				{
-					tempSett[BSID_PROBLEM_KEYS] = 0;
-					break;
-				}
+					return 0;
+			tempSett[BSID_PROBLEM_KEYS] = 0;
 			break;
 		case TID_CTRLC:
 		{
@@ -1346,7 +1344,7 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 		default:
 			break;
 		}
-		break;
+		return 0;
 	case WM_CLIPBOARDUPDATE:
 		tempSett[BSID_WAITING_CLIPBOARD] = 0;
 		break;
