@@ -33,7 +33,7 @@ using namespace Gdiplus;
 #define SC_YELLOW				FOREGROUND_GREEN | FOREGROUND_RED
 #define SC_WHITE				FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE
 #define SC_NULL					SC_WHITE | BACKGROUND_RED
-#define ConsColor(colID)			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), \
+#define ConslColor(colID)			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), \
 									colID | FOREGROUND_INTENSITY)
 //Сonstant case difference
 #define CASE_DIFFERENCE			32U
@@ -41,9 +41,10 @@ using namespace Gdiplus;
 #define WCN_ICON				L"FMT_TrayWin"
 #define WCN_SETT				L"FMT_SettWin"
 //Timer Settings
-#define TID_PROBLEM				1U
-#define TID_CTRLC				2U
-#define TID_NEWVER				3U
+#define TID_NEWVER				1U
+#define TID_MODAL				2U
+#define TID_CTRLC				3U
+#define TID_ANYKEY				4U
 //GitHub links
 #define GITHUB_MAIN				L"https://github.com/ParadiseMan900/Fix-my-text"
 #define GITHUB_RELEASE			L"https://github.com/ParadiseMan900/Fix-my-text/releases/latest"
@@ -55,11 +56,10 @@ using namespace Gdiplus;
 #define BSID_YANDEX_SEARCH		2U
 #define BSID_YANDEX_TRANSLATE	3U
 #define BSID_NEW_VERSION		0U
-#define BSID_PROBLEM_KEYS		1U
-#define BSID_WAITING_CLIPBOARD	2U
-#define BSID_DEBUG_MODE			3U
-#define BSID_DEBUG_VISIBLE		4U
-#define BSID_PAGES_SPIN			5U
+#define BSID_TIMER_WORK			1U
+#define BSID_DEBUG_MODE			2U
+#define BSID_DEBUG_VISIBLE		3U
+#define BSID_PAGES_SPIN			4U
 //Settings app values
 #define	CX						1280U
 #define CY						720U
@@ -169,43 +169,71 @@ HMODULE histance = 0;
 HWND consoleWin = 0;
 NOTIFYICONDATAW nTray;
 GraphVar* gv = 0;
-Hotkey defaultHkSett[] = { { MOD_SHIFT | MOD_WIN, 'Z' }, { MOD_SHIFT | MOD_WIN, 'X' }, { MOD_ALT | MOD_WIN, 'Z' }, { MOD_ALT | MOD_WIN, 'X' } };
+byte switcher;
+Hotkey defaultHkSett[] = { { MOD_SHIFT | MOD_WIN, 'Z' }, { MOD_SHIFT | MOD_WIN, 'X' },
+	{ MOD_ALT | MOD_WIN, 'Z' }, { MOD_ALT | MOD_WIN, 'X' } };
 Hotkey fileHkSett[sizeof(defaultHkSett) / sizeof(*defaultHkSett)];
 bool fileBoolSett[] = { 1, 1, 1, 1 };
-bool tempSett[] = { 0, 0, 0, 0, 0, 0};
+bool tempSett[] = { 0, 0, 0, 0, 0};
 
 void LogMsg(const char* msg, WORD msgColor)
 {
 	if (!consoleWin)
 		return;
-	ConsColor(msgColor);
+	ConslColor(msgColor);
 	printf("/#/ %s /#/\n", msg);
-	ConsColor(SC_WHITE);
+	ConslColor(SC_WHITE);
 }
-/////////////////////////////////////////////////////////////////////////////////////
 void PrintStrData(StrData* data, const char* msg)
 {
 	if (!consoleWin)
 		return;
-	ConsColor(SC_RED);
+	ConslColor(SC_RED);
 	printf("%s[%llu] -> ", msg, data->strSize);
 	switch (data->format)
 	{
 	case CF_UNICODETEXT:
-		ConsColor(SC_WHITE);
+		ConslColor(SC_WHITE);
 		wprintf(L"\"%s\"\n", data->str);
 		break;
 	case CF_DIB:
-		ConsColor(SC_SKY);
+		ConslColor(SC_SKY);
 		printf("* PICTURE / КАРТИНКА *\n");
-		ConsColor(SC_WHITE);
+		ConslColor(SC_WHITE);
 		break;
 	default:
-		ConsColor(SC_NULL);
+		ConslColor(SC_NULL);
 		printf("|| NULL ||\n");
-		ConsColor(SC_WHITE);
+		ConslColor(SC_WHITE);
 		break;
 	}
+}
+/////////////////////////////////////////////////////////////////////////////////////
+void TimerWaitCycle(MSG* msg, byte timerID)
+{
+	SetTimer(nTray.hWnd, timerID, USER_TIMER_MINIMUM, NULL);
+	tempSett[BSID_TIMER_WORK] = TRUE;
+	while (tempSett[BSID_TIMER_WORK] && GetMessageW(msg, NULL, 0, 0))
+		DispatchMessageW(msg);
+	KillTimer(nTray.hWnd, timerID);
+}
+void EmulateCombination(const byte keysCount, ...)
+{
+	USHORT inputCount = keysCount * 2;
+	INPUT* input = (INPUT*)calloc(inputCount, sizeof(INPUT));
+	ALLOC(input);
+	va_list valist;
+	va_start(valist, keysCount);
+	for (USHORT i = 0; i != keysCount; i++)
+	{
+		input[i].type = INPUT_KEYBOARD;
+		input[i + keysCount].type = INPUT_KEYBOARD;
+		input[i + keysCount].ki.dwFlags = KEYEVENTF_KEYUP;
+		input[i].ki.wVk = input[i + keysCount].ki.wVk = va_arg(valist, WORD);
+	}
+	va_end(valist);
+	if (SendInput(inputCount, input, sizeof(INPUT)) != inputCount)
+		LogMsg("Emulate ERROR", SC_GREEN);
 }
 StrData GetBufer(void)
 {
@@ -269,7 +297,7 @@ wchar_t LDown(wchar_t letter)
 }
 bool LIsCharInTheLine(const wchar_t* str, size_t strSize, wchar_t wchar)
 {
-	for (size_t i = 0; i < strSize; i++)
+	for (size_t i = 0; i != strSize; i++)
 		if (str[i] == wchar)
 			return TRUE;
 	return 0;
@@ -357,23 +385,14 @@ void LogicSwitch(StrData* opt, unsigned switcher)
 		return;
 	}
 }
-void EmulateCombination(const byte keysCount, ...)
+void LDataComeback(StrData* opt, MSG* msg)
 {
-	USHORT inputCount = keysCount * 2;
-	INPUT* input = (INPUT*)calloc(inputCount, sizeof(INPUT));
-	ALLOC(input);
-	va_list valist;
-	va_start(valist, keysCount);
-	for (USHORT i = 0; i != keysCount; i++)
-	{
-		input[i].type = INPUT_KEYBOARD;
-		input[i + keysCount].type = INPUT_KEYBOARD;
-		input[i + keysCount].ki.dwFlags = KEYEVENTF_KEYUP;
-		input[i].ki.wVk = input[i + keysCount].ki.wVk = va_arg(valist, WORD);
-	}
-	va_end(valist);
-	if (SendInput(inputCount, input, sizeof(INPUT)) != inputCount)
-		LogMsg("Emulate ERROR", SC_GREEN);
+	PrintStrData(opt, "Изменённые данные");
+	SetBufer(opt);
+	////	Эмуляция Ctrl + V
+	EmulateCombination(2, VK_CONTROL, 'V');
+	////	Ожидания действий для корректной вставки CONSERVATION
+	TimerWaitCycle(msg, TID_ANYKEY);
 }
 /////////////////////////////////////////////////////////////////////////////////////
 void AdjustRectByDPI(RECT* rt, byte dpiNew, byte dpiOld)
@@ -1297,15 +1316,6 @@ void OpenSettings(void)
 			GetSystemMetrics(SM_CXSCREEN) - CX >> 1, GetSystemMetrics(SM_CYSCREEN) - CY >> 1, CX, CY, 0, 0, histance, 0);
 	else SetForegroundWindow(gv->settWin);
 }
-void TimerWaitCycle(MSG* msg, byte timerID, byte boolID)
-{
-	SetTimer(nTray.hWnd, timerID, USER_TIMER_MINIMUM, NULL);
-	tempSett[boolID] = TRUE;
-	while (tempSett[boolID])
-		if (GetMessageW(msg, NULL, 0, 0))
-			DispatchMessageW(msg);
-	KillTimer(nTray.hWnd, timerID);
-}
 void AddMenuButton(HMENU hMenu, UINT flags, byte id, const wchar_t* name, byte bmpID)
 {
 	AppendMenuW(hMenu, flags, id, name);
@@ -1323,32 +1333,44 @@ LRESULT CALLBACK IconReaction(HWND window, UINT message, WPARAM wParam, LPARAM l
 	case WM_TIMER:
 		switch (wParam)
 		{
-		case TID_PROBLEM:
-			for (byte i = 0; i != 255; i++)
-				if (GetKeyState(i) < 0)
-					return 0;
-			tempSett[BSID_PROBLEM_KEYS] = 0;
+		case TID_NEWVER:
+			if (tempSett[BSID_NEW_VERSION] = IsNewVersionExist())
+				KillTimer(window, TID_NEWVER);
 			break;
+		case TID_MODAL:
+		{
+			byte modalKeys[] = { VK_LMENU, VK_RMENU, VK_LCONTROL, VK_RCONTROL, VK_LSHIFT, VK_RSHIFT, VK_LWIN, VK_RWIN };
+			for (byte i = 0; i != sizeof(modalKeys) / sizeof(*modalKeys); i++)
+				if (GetKeyState(modalKeys[i]) < 0)
+					return 0;
+			if(GetKeyState(fileHkSett[switcher - 1].main) >= 0)
+				tempSett[BSID_TIMER_WORK] = 0;	
+			break;
+		}
 		case TID_CTRLC:
 		{
 			static unsigned char iterNULL = 0;
 			if (++iterNULL == 25)	//25 итераций проверки
 			{
-				tempSett[BSID_WAITING_CLIPBOARD] = 0;
+				tempSett[BSID_TIMER_WORK] = 0;
 				iterNULL = 0;
 			}
 			break;
 		}
-		case TID_NEWVER:
-			if (tempSett[BSID_NEW_VERSION] = IsNewVersionExist())
-				KillTimer(window, TID_NEWVER);
+		case TID_ANYKEY:
+			for (byte i = 0; i != 255; i++)
+				if (GetKeyState(i) < 0)
+				{
+					tempSett[BSID_TIMER_WORK] = 0;
+					break;
+				}
 			break;
 		default:
 			break;
 		}
 		return 0;
 	case WM_CLIPBOARDUPDATE:
-		tempSett[BSID_WAITING_CLIPBOARD] = 0;
+		tempSett[BSID_TIMER_WORK] = 0;
 		break;
 	case WM_USER:
 		switch (lParam)
@@ -1521,6 +1543,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCH
 	StrData conservation, selected;
 	ZeroMemory(&conservation, sizeof(StrData));
 	ZeroMemory(&selected, sizeof(StrData));
+	
 	////	ЦАРЬ БАТЮШКА ЦИКЛ
 	MSG msg;
 	ZeroMemory(&msg, sizeof(msg));
@@ -1529,22 +1552,22 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCH
 		DispatchMessageW(&msg);
 		if (msg.message != WM_HOTKEY)
 			continue;
-		unsigned swither = (unsigned)msg.wParam;
+		switcher = (byte)msg.wParam;
 		if (consoleWin)
 			printf("--------------------------------------------------------------------------------------\n");
 		////	Получение CONSERVATION
 		conservation = GetBufer();
-		PrintStrData(&conservation, VAR_NAME(conservation));
-		////	Проблемные кнопки, мешающие копированию
-		TimerWaitCycle(&msg, TID_PROBLEM, BSID_PROBLEM_KEYS);
+		PrintStrData(&conservation, "Получние консерв");
+		////	Проблемные кнопки, мешающие копированию (модальные + сочетание)
+		TimerWaitCycle(&msg, TID_MODAL);
 		////	Эмуляция Ctrl + C
 		AddClipboardFormatListener(nTray.hWnd);
 		EmulateCombination(2, VK_CONTROL, 'C');
-		TimerWaitCycle(&msg, TID_CTRLC, BSID_WAITING_CLIPBOARD);
+		TimerWaitCycle(&msg, TID_CTRLC);
 		RemoveClipboardFormatListener(nTray.hWnd);
 		////	Получение SELECTED
 		selected = GetBufer();
-		PrintStrData(&selected, VAR_NAME(selected));
+		PrintStrData(&selected, "Получние данных");
 		////	Пропускаем логику если ничего не выделенно
 		if (!selected.str)
 		{
@@ -1558,30 +1581,76 @@ int WINAPI wWinMain(_In_ HINSTANCE hInst, _In_opt_ HINSTANCE hInstPrev, _In_ WCH
 			SetBufer(&conservation);
 			continue;
 		}
-		////	Самая главная функция																	<<<===
-		LogicSwitch(&selected, swither);
-		if (swither == LID_SWAP || swither == LID_UPDOWN)
+		////	Самая главная часть		<<<===
+		switch (switcher)
 		{
-			PrintStrData(&selected, VAR_NAME(selected));
-			SetBufer(&selected);
-			////	Эмуляция Ctrl + V
-			EmulateCombination(2, VK_CONTROL, 'V');
-			////	Смена (при включеной галочки)
-			switch (swither)
+		case LID_SWAP:
+		{
+			const wchar_t* engChars = L"`~@#$^&qQwWeErRtTyYuUiIoOpP[{]}|aAsSdDfFgGhHjJkKlL;:'\"zZxXcCvVbBnNmM,<.>/?";
+			const wchar_t* rusChars = L"ёЁ\"№;:?йЙцЦуУкКеЕнНгГшШщЩзЗхХъЪ/фФыЫвВаАпПрРоОлЛдДжЖэЭяЯчЧсСмМиИтТьЬбБюЮ.,";
+			const wchar_t* sameChars = L"1234567890!%*()-_=+\\\";:?.,/";
+			size_t swapCharsSize = wcslen(engChars);
+			size_t sameCharsSize = wcslen(sameChars);
+			wchar_t* oneWord;
+			const wchar_t* tempP;
+			const wchar_t* tempP2;
+			long long langCounter;
+			for (size_t i = 0, wordLen, lastID = 0; i != selected.strSize; i++)
+				if (selected.str[i] == L' ' || selected.str[i] == L'\t' || selected.str[i] == L'\n' || selected.str[i] == L'\0')
+				{
+					wordLen = i - lastID;
+					oneWord = selected.str + lastID;
+					langCounter = 0;
+					for (size_t j = 0; j != wordLen; j++)
+					{
+						if (LIsCharInTheLine(sameChars, sameCharsSize, oneWord[j]))
+							continue;
+						if (LIsCharInTheLine(engChars, swapCharsSize, oneWord[j]))
+							langCounter++;
+						else langCounter--;
+					}
+					tempP = tempP2 = engChars;
+					(langCounter >= 0 ? tempP2 : tempP) = rusChars;
+					for (size_t j = 0; j != wordLen; j++)
+						for (size_t k = 0; k != swapCharsSize; k++)
+							if (oneWord[j] == tempP[k])
+							{
+								oneWord[j] = tempP2[k];
+								break;
+							}
+					lastID = i + 1;
+				}
+			LDataComeback(&selected, &msg);
+			if (fileBoolSett[BSID_CHANGE_LANG])
+				PostMessageW(GetForegroundWindow(), WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_FORWARD, 0);
+			LogMsg("Смена языка выполнена", SC_GREEN);
+			break;
+		}
+		case LID_UPDOWN:
+		{
+			wchar_t upChar;
+			for (size_t i = 0; i < selected.strSize - 1; i++)
 			{
-			case LID_SWAP:
-				if (fileBoolSett[BSID_CHANGE_LANG])
-					PostMessageW(GetForegroundWindow(), WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_FORWARD, 0);
-				break;
-			case LID_UPDOWN:
-				if (fileBoolSett[BSID_CHANGE_CAPS])
-					EmulateCombination(1, VK_CAPITAL);
-				break;
-			default:
-				break;
+				upChar = LUp(selected.str[i]);
+				selected.str[i] = selected.str[i] == upChar ? LDown(selected.str[i]) : upChar;
 			}
-			////	Ожидания действий для корректной вставки CONSERVATION
-			TimerWaitCycle(&msg, TID_PROBLEM, BSID_PROBLEM_KEYS);
+			LDataComeback(&selected, &msg);
+			if (fileBoolSett[BSID_CHANGE_CAPS])
+				EmulateCombination(1, VK_CAPITAL);
+			LogMsg("Смена регистра выполнена", SC_GREEN);
+			break;
+		}
+		case LID_TOWEB:
+			LStrToInet(&selected, fileBoolSett[BSID_YANDEX_SEARCH] ? L"https://ya.ru?q=" : L"https://www.google.com/search?q=");
+			LogMsg("Поиск по тексту выполнен", SC_GREEN);
+			break;
+		case LID_TRANSLATE:
+			LStrToInet(&selected, fileBoolSett[BSID_YANDEX_TRANSLATE] ? L"https://translate.yandex.ru/?source_lang=en&target_lang=ru&text=" :
+				L"https://translate.google.ru/?sl=auto&tl=ru&text=");
+			LogMsg("Перевод текеста выполнен", SC_GREEN);
+			break;
+		default:
+			break;
 		}
 		////	Вставка CONSERVATION
 		SetBufer(&conservation);
